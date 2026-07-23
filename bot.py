@@ -1,6 +1,7 @@
 import telebot
 from telebot.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 import pymongo
+import certifi
 import time
 import threading
 import os
@@ -18,7 +19,7 @@ bot = telebot.TeleBot(TOKEN)
 # -----------------------------------------------------------
 # MongoDB കണക്ഷൻ
 # -----------------------------------------------------------
-client = pymongo.MongoClient(MONGO_URI)
+client = pymongo.MongoClient(MONGO_URI,tlsCAFile=certifi.where())
 db = client["ultimate_telegram_bot"]
 
 users_col = db["users"]
