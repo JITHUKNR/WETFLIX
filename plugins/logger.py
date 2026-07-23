@@ -15,20 +15,18 @@ def setup(bot):
             name = f"{user.first_name} {user.last_name}" if user.last_name else user.first_name
             username = f"@{user.username}" if user.username else "No Username"
             
-            # അഡ്മിന് യൂസറുടെ വിവരങ്ങൾ ഹെഡ്ഡർ ആയി അയക്കുന്നു
+            # യൂസറുടെ വിവരങ്ങൾ ബോട്ടിന്റെ ചാറ്റിലേക്ക് അയക്കുന്നു
             info_header = (
-                f"👤 **User Activity Log**\n\n"
+                f"👤 **User Activity**\n\n"
                 f"• **Name:** {name}\n"
                 f"• **Username:** {username}\n"
                 f"• **User ID:** `{user.id}`\n"
-                f"• **Content Type:** `{message.content_type}`"
+                f"• **Type:** `{message.content_type}`"
             )
             
-            # ആദ്യം യൂസർ ഇൻഫോ അയക്കുന്നു
-            bot.send_message(ADMIN_ID, info_header, parse_mode='Markdown')
-            
-            # യൂസർ അയച്ച ഒറിജിനൽ മെസ്സേജ് അഡ്മിൻ ചാറ്റിലേക്ക് കോപ്പി/ഫോർവേഡ് ചെയ്യുന്നു
-            bot.forward_message(ADMIN_ID, message.chat.id, message.message_id)
+            bot.send_message(message.chat.id, info_header, parse_mode='Markdown')
+            # യൂസർ അയച്ച ഒറിജിനൽ മെസ്സേജും ബോട്ട് വഴി തിരിച്ച് ഫോർവേഡ് ചെയ്യുന്നു
+            bot.forward_message(message.chat.id, message.chat.id, message.message_id)
             
         except Exception as e:
-            print(f"Activity Logger Error: {e}")
+            print(f"Logger Error: {e}")
