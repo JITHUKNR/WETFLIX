@@ -1,33 +1,17 @@
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
-
-# നിങ്ങളുടെ ചാനലിന്റെ യൂസർനെയിം അല്ലെങ്കിൽ ലിങ്ക് ഇവിടെ നൽകുക (ഉദാഹരണത്തിന്: "@YourChannelUsername")
-# ചാനൽ ഐഡി അല്ലെങ്കിൽ യൂസർനെയിം താഴെ മാറ്റുക:
-UPDATE_CHANNEL = "@YourChannelUsername" 
+from database import settings_col
 
 def setup(bot):
     
-    def check_forcesub(message):
-        user_id = message.from_user.id
-        # അഡ്മിന് ഫോഴ്സ് സബ്സ്ക്രൈബ് ബാധകമല്ല
-        if user_id == ADMIN_ID:
-            return True
-            
-        try:
-            # യൂസർ ചാനലിൽ ജോയിൻ ചെയ്തിട്ടുണ്ടോ എന്ന് പരിശോധിക്കുന്നു
-            member = bot.get_chat_member(UPDATE_CHANNEL, user_id)
-            if member.status in ['left', 'kicked']:
-                return False
-            return True
-        except Exception as e:
-            print(f"ForceSub Error: {e}")
-            # ചാനൽ സെറ്റിംഗ്സ് തെറ്റാണെങ്കിൽ ബോട്ട് ബ്ലോക്ക് ആവാതിരിക്കാൻ തൽക്കാലം True കൊടുക്കുന്നു
-            return True
+    # ഡാറ്റാബേസിൽ നിന്ന് ഫോഴ്സ് സബ്സ്ക്രൈബ് ചാനലുകൾ എടുക്കാൻ
+    def get_forced_channels():
+        data = settings_col.find_one({"_id": "forced_channels"})
+        return data.get("channels", []) if data else []
 
-    # ഏതെങ്കിലും കമാൻഡ് അടിക്കുമ്പോൾ ഫോഴ്സ് സബ്സ്ക്രൈബ് പരിശോധിക്കുന്ന മിഡ്‌വെയർ/ഫംഗ്ഷൻ
+    # ഫോഴ്സ് സബ്സ്ക്രൈബ് ചെക്ക് ചെയ്യുന്ന ഫംഗ്ഷൻ
     @bot.message_handler(func=lambda message: True, content_types=['text', 'video', 'photo', 'sticker'])
     def force_sub_check(message):
-        # അഡ്മിൻ കമാൻഡുകൾക്കോ മറ്റ് ചാറ്റുകൾക്കോ ഇത് ബാധകമാക്കണ്ടെങ്കിൽ ഇവിടെ ഫിൽട്ടർ ചെയ്യാം
         if message.chat.type != 'private':
             return
             
@@ -35,37 +19,112 @@ def setup(bot):
         if user_id == ADMIN_ID:
             return
 
-        # സ്റ്റാർട്ട് കമാൻഡ് ആണെങ്കിൽ ആദ്യം അത് വർക്ക് ചെയ്യാൻ അനുവദിക്കുക
         if message.text and message.text.startswith('/start'):
             return
 
-        if not check_forcesub(message):
+        channels = get_forced_channels()
+        if not channels:
+            return # ചാനലുകൾ സെറ്റ് ചെയ്തിട്ടില്ലെങ്കിൽ തടസ്സമില്ലാതെ വർക്ക് ചെയ്യും
+
+        not_joined_channels = []
+        
+        for ch in channels:
+            try:
+                member = bot.get_chat_member(ch, user_id)
+                if member.status in ['left', 'kicked']:
+                    not_joined_channels.append(ch)
+            except Exception as e:
+                print(f"Error checking channel {ch}: {e}")
+
+        if not_joined_channels:
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{UPDATE_CHANNEL.replace('@', '')}"))
+            for ch in not_joined_channels:
+                # ചാനലിന്റെ ലിങ്ക് അല്ലെങ്കിൽ യൂസർനെയിം വെച്ച് ബട്ടൺ ഉണ്ടാക്കുന്നു
+                clean_ch = ch.replace('@', '')
+                markup.add(InlineKeyboardButton(f"📢 Join {ch}", url=f"https://t.me/{clean_ch}"))
+            
             markup.add(InlineKeyboardButton("🔄 Try Again", callback_data="check_sub"))
             
             bot.reply_to(
                 message, 
-                "⚠️ **Access Denied!**\n\nTo use this bot, you must join our update channel first. Please join the channel and click 'Try Again'.", 
+                "⚠️ **Subscription Required!**\n\nTo use this bot, you must join our update channels first. Please join them and click 'Try Again'.", 
                 reply_markup=markup, 
                 parse_mode='Markdown'
             )
-            # താഴെയുള്ള മറ്റ് ഹാൻഡ്‌ലറുകൾ വർക്ക് ചെയ്യാതിരിക്കാൻ ഇത് തടയും
             return True
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
     def callback_check_sub(call):
         user_id = call.from_user.id
+        channels = get_forced_channels()
+        still_not_joined = False
+
+        for ch in channels:
+            try:
+                member = bot.get_chat_member(ch, user_id)
+                if member.status in ['left', 'kicked']:
+                    still_not_joined = True
+                    break
+            except:
+                pass
+
+        if still_not_joined:
+            bot.answer_callback_query(call.id, "❌ You have not joined all required channels yet!", show_alert=True)
+        else:
+            bot.answer_callback_query(call.id, "✅ Verified successfully! You can now use the bot.", show_alert=True)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="🎉 **Thank you!** You are now verified. You can use the bot commands now."
+            )
+
+    # അഡ്മിന് ചാനലുകൾ മാനേജ് ചെയ്യാനുള്ള കമാൻഡുകൾ
+    @bot.message_handler(commands=['addchannel'])
+    def add_channel(message):
+        if message.from_user.id != ADMIN_ID: return
         try:
-            member = bot.get_chat_member(UPDATE_CHANNEL, user_id)
-            if member.status in ['left', 'kicked']:
-                bot.answer_callback_query(call.id, "❌ You have not joined the channel yet!", show_alert=True)
+            args = message.text.split()
+            if len(args) < 2:
+                bot.reply_to(message, "Usage: `/addchannel @ChannelUsername`", parse_mode='Markdown')
+                return
+            
+            ch_username = args[1]
+            channels = get_forced_channels()
+            if ch_username not in channels:
+                channels.append(ch_username)
+                settings_col.update_one({"_id": "forced_channels"}, {"$set": {"channels": channels}}, upsert=True)
+                bot.reply_to(message, f"✅ Channel `{ch_username}` added to Force Subscribe list successfully.", parse_mode='Markdown')
             else:
-                bot.answer_callback_query(call.id, "✅ Thank you for joining! You can now use the bot.")
-                bot.edit_message_text(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    text="🎉 **Thank you!** You are now verified. You can use the bot commands now."
-                )
+                bot.reply_to(message, f"⚠️ Channel `{ch_username}` is already in the list.", parse_mode='Markdown')
         except Exception as e:
-            bot.answer_callback_query(call.id, "⚠️ Error checking subscription. Please try again later.", show_alert=True)
+            bot.reply_to(message, f"Error: {e}")
+
+    @bot.message_handler(commands=['removechannel'])
+    def remove_channel(message):
+        if message.from_user.id != ADMIN_ID: return
+        try:
+            args = message.text.split()
+            if len(args) < 2:
+                bot.reply_to(message, "Usage: `/removechannel @ChannelUsername`", parse_mode='Markdown')
+                return
+            
+            ch_username = args[1]
+            channels = get_forced_channels()
+            if ch_username in channels:
+                channels.remove(ch_username)
+                settings_col.update_one({"_id": "forced_channels"}, {"$set": {"channels": channels}}, upsert=True)
+                bot.reply_to(message, f"✅ Channel `{ch_username}` removed from Force Subscribe list.", parse_mode='Markdown')
+            else:
+                bot.reply_to(message, f"⚠️ Channel `{ch_username}` not found in the list.", parse_mode='Markdown')
+        except Exception as e:
+            bot.reply_to(message, f"Error: {e}")
+
+    @bot.message_handler(commands=['listchannels'])
+    def list_channels(message):
+        if message.from_user.id != ADMIN_ID: return
+        channels = get_forced_channels()
+        if not channels:
+            bot.reply_to(message, "📂 No force subscribe channels added yet.")
+        else:
+            ch_list = "\n".join([f"• {ch}" for ch in channels])
+            bot.reply_to(message, f"📢 **Forced Channels List:**\n\n{ch_list}", parse_mode='Markdown')
