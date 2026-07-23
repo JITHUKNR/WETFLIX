@@ -17,9 +17,9 @@ ADMIN_ID = int(os.environ.get("ADMIN_ID", 123456789)) # താങ്കളുട
 bot = telebot.TeleBot(TOKEN)
 
 # -----------------------------------------------------------
-# MongoDB കണക്ഷൻ
+# MongoDB കണക്ഷൻ (SSL എറർ ഒഴിവാക്കാൻ certifi ഉപയോഗിച്ചിരിക്കുന്നു)
 # -----------------------------------------------------------
-client = pymongo.MongoClient(MONGO_URI,tlsCAFile=certifi.where())
+client = pymongo.MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = client["ultimate_telegram_bot"]
 
 users_col = db["users"]
@@ -125,24 +125,43 @@ def cmd_image(message):
     process_media_request(message, images_col, bot.send_photo, "ഫോട്ടോകൾ ലഭ്യമല്ല.")
 
 # -----------------------------------------------------------
-# ഡാറ്റ സേവ് ചെയ്യാനുള്ള ചാനൽ കമാൻഡുകൾ
+# ചാനലിൽ നിന്നും ഗ്രൂപ്പിൽ നിന്നും ഓട്ടോമാറ്റിക് ആയി മീഡിയ സേവ് ചെയ്യാൻ
 # -----------------------------------------------------------
-@bot.channel_post_handler(content_types=['text', 'video', 'photo'])
-def save_data_from_channel(message):
-    if message.content_type == 'text' and "addstickers/" in message.text:
-        pack_name = message.text.split("addstickers/")[-1].split()[0]
-        try:
+
+def save_media_to_db(message):
+    try:
+        if message.content_type == 'video':
+            if not videos_col.find_one({"file_id": message.video.file_id}):
+                videos_col.insert_one({"file_id": message.video.file_id})
+        
+        elif message.content_type == 'photo':
+            # ഫോട്ടോയുടെ ഏറ്റവും വലിയ ക്വാളിറ്റിയിലുള്ള ഫയൽ ഐഡി എടുക്കുന്നു
+            if not images_col.find_one({"file_id": message.photo[-1].file_id}):
+                images_col.insert_one({"file_id": message.photo[-1].file_id})
+                
+        elif message.content_type == 'sticker':
+            if not stickers_col.find_one({"file_id": message.sticker.file_id}):
+                stickers_col.insert_one({"file_id": message.sticker.file_id})
+                
+        elif message.content_type == 'text' and "addstickers/" in message.text:
+            pack_name = message.text.split("addstickers/")[-1].split()[0]
             sticker_set = bot.get_sticker_set(pack_name)
             for sticker in sticker_set.stickers:
                 if not stickers_col.find_one({"file_id": sticker.file_id}):
                     stickers_col.insert_one({"file_id": sticker.file_id})
-        except: pass
-    elif message.content_type == 'video':
-        if not videos_col.find_one({"file_id": message.video.file_id}):
-            videos_col.insert_one({"file_id": message.video.file_id})
-    elif message.content_type == 'photo':
-        if not images_col.find_one({"file_id": message.photo[-1].file_id}):
-            images_col.insert_one({"file_id": message.photo[-1].file_id})
+    except Exception as e:
+        print(f"Error saving media: {e}")
+
+# ചാനലിൽ വരുന്ന പോസ്റ്റുകൾ പിടിച്ചെടുക്കാൻ
+@bot.channel_post_handler(content_types=['text', 'video', 'photo', 'sticker'])
+def handle_channel_post(message):
+    save_media_to_db(message)
+
+# ഗ്രൂപ്പുകളിൽ വരുന്ന മെസ്സേജുകൾ പിടിച്ചെടുക്കാൻ
+@bot.message_handler(content_types=['text', 'video', 'photo', 'sticker'], func=lambda message: message.chat.type in ['group', 'supergroup'])
+def handle_group_message(message):
+    save_media_to_db(message)
+
 
 # -----------------------------------------------------------
 # ADMIN PANEL COMMANDS (അഡ്മിൻ ഫീച്ചറുകൾ)
