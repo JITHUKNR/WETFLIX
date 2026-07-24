@@ -3,18 +3,18 @@ from config import db
 settings_collection = db["settings"]
 requested_users_collection = db["requested_users"]
 
-def set_fsub_data(channel_id, invite_link):
+def set_fsub_data(channels_list):
     settings_collection.update_one(
         {"_id": "fsub_settings"}, 
-        {"$set": {"channel": channel_id, "link": invite_link}}, 
+        {"$set": {"channels": channels_list}}, 
         upsert=True
     )
 
 def get_fsub_data():
     data = settings_collection.find_one({"_id": "fsub_settings"})
-    if data:
-        return data.get("channel"), data.get("link")
-    return None, None
+    if data and "channels" in data:
+        return data["channels"]
+    return []
 
 def add_requested_user(user_id):
     requested_users_collection.update_one(
