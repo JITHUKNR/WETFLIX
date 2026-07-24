@@ -6,12 +6,12 @@ from config import ADMIN_ID
 
 user_cooldowns = {}
 
-# Fetch cooldown time dynamically from database (Default is 3 minutes = 180 seconds)
+# Fetch cooldown time dynamically from database in seconds (Default is 180 seconds = 3 minutes)
 def get_dynamic_cooldown():
     data = settings_col.find_one({"_id": "bot_settings"})
     if data and "cooldown" in data:
-        return int(data["cooldown"]) * 60  
-    return 180  
+        return float(data["cooldown"])  
+    return 180.0  
 
 # Fetch auto-delete time dynamically from database (Default is 30 seconds)
 def get_delete_time():
@@ -54,36 +54,6 @@ def setup(bot):
     bot_instance = bot
 
     # -----------------------------------------------------------
-    # Admin Command to Change Auto-Delete Time (e.g., /settime 5 or /settime 2)
-    # -----------------------------------------------------------
-    @bot.message_handler(commands=['settime'])
-    def set_delete_time_cmd(message):
-        if message.from_user.id != ADMIN_ID:
-            bot.reply_to(message, "❌ You are not authorized to use this command.")
-            return
-            
-        args = message.text.split()
-        if len(args) < 2:
-            current_t = get_delete_time()
-            bot.reply_to(message, f"⏱️ Current auto-delete time is **{current_t} seconds**.\n\nUsage: `/settime 5` or `/settime 2`", parse_mode='Markdown')
-            return
-            
-        try:
-            new_time = float(args[1])
-            if new_time < 1:
-                bot.reply_to(message, "⚠️ Time must be at least 1 second.")
-                return
-                
-            settings_col.update_one(
-                {"_id": "bot_settings"},
-                {"$set": {"delete_time": new_time}},
-                upsert=True
-            )
-            bot.reply_to(message, f"✅ Auto-delete time successfully updated to **{new_time} seconds**!", parse_mode='Markdown')
-        except ValueError:
-            bot.reply_to(message, "❌ Please enter a valid number (e.g., `/settime 5`)", parse_mode='Markdown')
-
-    # -----------------------------------------------------------
     # Media Request Handler (Video, Image, Sticker)
     # -----------------------------------------------------------
     def process_media_request(message, db_collection, send_function, error_text):
@@ -111,15 +81,14 @@ def setup(bot):
             bot.reply_to(message, "⚠️ **To use this command, you must send join requests to our official channels!** 👇", reply_markup=markup, parse_mode='Markdown')
             return
 
-        # Dynamic Cooldown Timer Check (Admin is exempt)
+        # Dynamic Cooldown Timer Check in Seconds (Admin is exempt)
         cooldown_limit = get_dynamic_cooldown()
         if user_id != ADMIN_ID:
             current_time = time.time()
             last_time = user_cooldowns.get(user_id, 0)
             if current_time - last_time < cooldown_limit:
                 remaining = int(cooldown_limit - (current_time - last_time))
-                mins, secs = divmod(remaining, 60)
-                warn_msg = bot.reply_to(message, f"⏳ Please wait {mins} minutes and {secs} seconds before requesting another file.")
+                warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.")
                 threading.Timer(10.0, delete_message_after_delay, args=[message.chat.id, warn_msg.message_id]).start()
                 return
 
@@ -171,7 +140,7 @@ def setup(bot):
                     images_col.insert_one({"file_id": message.photo[-1].file_id})
                     
             elif message.content_type == 'sticker':
-                if not stickers_col.find_one({"file_id": message.sticker.file_id}):
+                if not stickers_col.find_one({"vfile_id": message.sticker.file_id}):
                     stickers_col.insert_one({"file_id": message.sticker.file_id})
         except Exception as e:
             print(f"Error saving media: {e}")
