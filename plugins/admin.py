@@ -69,9 +69,9 @@ def setup(bot):
             bot.answer_callback_query(call.id, "Delay Settings ⏳")
             msg = bot.send_message(
                 call.message.chat.id, 
-                "⏳ **Set Command Delay (Cooldown):**\n\n"
-                "Enter the delay time in minutes for videos, images, and stickers.\n"
-                "(Example: Type `2` for 2 minutes).\n\n"
+                "⏳ **Set Command Delay (Cooldown in Seconds):**\n\n"
+                "Enter the delay time in **seconds** between media requests.\n"
+                "(Example: Type `5` for 5 seconds, `30` for 30 seconds, or `120` for 2 minutes).\n\n"
                 "Type /cancel to abort.",
                 parse_mode='Markdown'
             )
@@ -169,11 +169,14 @@ def setup(bot):
             return
             
         try:
-            minutes = int(message.text.strip())
-            set_cooldown(minutes)
-            bot.reply_to(message, f"✅ **Command delay successfully set to {minutes} minutes!**", parse_mode='Markdown')
+            seconds = float(message.text.strip())
+            if seconds < 0:
+                bot.reply_to(message, "⚠️ Time cannot be negative.")
+                return
+            set_cooldown(seconds)
+            bot.reply_to(message, f"✅ **Command delay successfully set to {seconds} seconds!**", parse_mode='Markdown')
         except ValueError:
-            bot.reply_to(message, "❌ Invalid input. Please enter a valid number (e.g., 2).", parse_mode='Markdown')
+            bot.reply_to(message, "❌ Invalid input. Please enter a valid number (e.g., 5 or 30).", parse_mode='Markdown')
 
     def process_deletetime_step(message, bot):
         if message.text == '/cancel':
