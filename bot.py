@@ -7,6 +7,9 @@ from flask import Flask
 from telebot.types import BotCommand
 from config import BOT_TOKEN, PORT
 
+# Enable Middleware for tracking users
+telebot.apihelper.ENABLE_MIDDLEWARE = True
+
 # Initialize bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
