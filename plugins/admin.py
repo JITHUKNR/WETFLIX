@@ -126,10 +126,35 @@ def setup(bot):
             bot.answer_callback_query(call.id, "Broadcast 📢")
             bot.send_message(call.message.chat.id, "📢 **Broadcast:**\nTo send a message to all users, type `/broadcast your message`.")
 
-        elif action == "stats":
-            bot.answer_callback_query(call.id, "Bot Statistics 📊")
-            bot.send_message(call.message.chat.id, "📊 **Bot Stats:**\nType `/stats` to view the total number of users.")
+                elif action == "stats":
+            bot.answer_callback_query(call.id, "Fetching Details... 📊")
+            
+            import datetime
+            now = datetime.datetime.now()
+            today = datetime.datetime(now.year, now.month, now.day)
+            yesterday = today - datetime.timedelta(days=1)
+            five_mins_ago = now - datetime.timedelta(minutes=5)
+            
+            try:
+                # ഡാറ്റാബേസിൽ നിന്നുള്ള കണക്കുകൾ എടുക്കുന്നു
+                total_users = users_col.count_documents({})
+                new_today = users_col.count_documents({"joined_date": {"$gte": today}})
+                active_today = users_col.count_documents({"last_active": {"$gte": today}})
+                active_yesterday = users_col.count_documents({"last_active": {"$gte": yesterday, "$lt": today}})
+                live_users = users_col.count_documents({"last_active": {"$gte": five_mins_ago}})
 
+                text = (
+                    "📊 **WETFLIX BOT STATISTICS**\n\n"
+                    f"👥 **Total Users:** `{total_users}`\n"
+                    f"🆕 **New Users Today:** `{new_today}`\n"
+                    f"🟢 **Active Today:** `{active_today}`\n"
+                    f"🟡 **Active Yesterday:** `{active_yesterday}`\n"
+                    f"🔥 **Currently Using (Live):** `{live_users}`"
+                )
+                bot.send_message(call.message.chat.id, text, parse_mode='Markdown')
+            except Exception as e:
+                bot.send_message(call.message.chat.id, "❌ Error fetching stats. Ensure tracking is active.")
+                
         elif action == "back":
             send_admin_panel(call.message)
             bot.delete_message(call.message.chat.id, call.message.message_id)
