@@ -43,8 +43,11 @@ def run_flask():
 if __name__ == "__main__":
     print("🚀 Bot is starting...")
     
-    # Set Bot Commands (Hides admin command from the menu)
     try:
+        # Clear any existing webhooks and stuck states to prevent 409 conflict
+        bot.remove_webhook()
+        
+        # Set Bot Commands (Hides admin command from the menu)
         bot.set_my_commands([
             BotCommand("start", "Start the bot"),
             BotCommand("sticker", "Get a random sticker"),
@@ -55,5 +58,8 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Error setting menu: {e}")
 
+    # Start Flask server in background thread
     threading.Thread(target=run_flask).start()
-    bot.infinity_polling()
+    
+    # Start polling safely, skipping pending stuck updates
+    bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
