@@ -126,7 +126,7 @@ def setup(bot):
             bot.answer_callback_query(call.id, "Broadcast 📢")
             bot.send_message(call.message.chat.id, "📢 **Broadcast:**\nTo send a message to all users, type `/broadcast your message`.")
 
-                elif action == "stats":
+        elif action == "stats":
             bot.answer_callback_query(call.id, "Fetching Details... 📊")
             
             import datetime
