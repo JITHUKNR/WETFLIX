@@ -1,7 +1,9 @@
+import datetime
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 try:
-    from database import set_fsub_data, set_cooldown, settings_col
+    # ഇവിടെ users_col ഇംപോർട്ട് ചെയ്തിട്ടുണ്ട് (Stats എറർ മാറാൻ)
+    from database import set_fsub_data, set_cooldown, settings_col, users_col
 except ImportError:
     pass 
 
@@ -123,25 +125,34 @@ def setup(bot):
             bot.send_message(call.message.chat.id, "👋 Welcome message is active. Customization coming soon!")
 
         elif action == "broadcast":
-            bot.answer_callback_query(call.id, "Broadcast 📢")
-            bot.send_message(call.message.chat.id, "📢 **Broadcast:**\nTo send a message to all users, type `/broadcast your message`.")
+            # ബ്രോഡ്കാസ്റ്റ് ചെയ്യാൻ മെസ്സേജ് ചോദിക്കുന്ന ഭാഗം
+            bot.answer_callback_query(call.id, "Broadcast Mode 📢")
+            msg = bot.send_message(
+                call.message.chat.id, 
+                "📢 **Broadcast Message:**\n\n"
+                "Send the message (Text, Photo, Video, Sticker, etc.) you want to broadcast to all users.\n\n"
+                "Type /cancel to abort.",
+                parse_mode='Markdown'
+            )
+            bot.register_next_step_handler(msg, process_broadcast_step, bot)
 
         elif action == "stats":
             bot.answer_callback_query(call.id, "Fetching Details... 📊")
             
-            import datetime
             now = datetime.datetime.now()
             today = datetime.datetime(now.year, now.month, now.day)
             yesterday = today - datetime.timedelta(days=1)
             five_mins_ago = now - datetime.timedelta(minutes=5)
             
             try:
-                # ഡാറ്റാബേസിൽ നിന്നുള്ള കണക്കുകൾ എടുക്കുന്നു
-                total_users = users_col.count_documents({})
-                new_today = users_col.count_documents({"joined_date": {"$gte": today}})
-                active_today = users_col.count_documents({"last_active": {"$gte": today}})
-                active_yesterday = users_col.count_documents({"last_active": {"$gte": yesterday, "$lt": today}})
-                live_users = users_col.count_documents({"last_active": {"$gte": five_mins_ago}})
+                if 'users_col' in globals():
+                    total_users = users_col.count_documents({})
+                    new_today = users_col.count_documents({"joined_date": {"$gte": today}})
+                    active_today = users_col.count_documents({"last_active": {"$gte": today}})
+                    active_yesterday = users_col.count_documents({"last_active": {"$gte": yesterday, "$lt": today}})
+                    live_users = users_col.count_documents({"last_active": {"$gte": five_mins_ago}})
+                else:
+                    total_users = new_today = active_today = active_yesterday = live_users = 0
 
                 text = (
                     "📊 **WETFLIX BOT STATISTICS**\n\n"
@@ -153,11 +164,44 @@ def setup(bot):
                 )
                 bot.send_message(call.message.chat.id, text, parse_mode='Markdown')
             except Exception as e:
-                bot.send_message(call.message.chat.id, "❌ Error fetching stats. Ensure tracking is active.")
+                bot.send_message(call.message.chat.id, f"❌ Error fetching stats: `{e}`")
                 
         elif action == "back":
             send_admin_panel(call.message)
             bot.delete_message(call.message.chat.id, call.message.message_id)
+
+    # -----------------------------------------------------------
+    # Step Handlers (Functions that process admin inputs)
+    # -----------------------------------------------------------
+    
+    def process_broadcast_step(message, bot):
+        if message.text == '/cancel':
+            bot.reply_to(message, "❌ Broadcast cancelled.")
+            return
+            
+        bot.reply_to(message, "🚀 **Broadcasting started...** Please wait, this might take some time depending on the number of users.", parse_mode='Markdown')
+        
+        try:
+            users = users_col.find({})
+            success = 0
+            failed = 0
+            
+            for user in users:
+                try:
+                    # copy_message ഉപയോഗിക്കുന്നത് വഴി ഫോട്ടോയും വീഡിയോയും സഹിതം എല്ലാം കൃത്യമായി ഫോർവേഡ് ടാഗ് ഇല്ലാതെ പോകും
+                    bot.copy_message(chat_id=user['user_id'], from_chat_id=message.chat.id, message_id=message.message_id)
+                    success += 1
+                except Exception:
+                    failed += 1
+                    
+            report = (
+                "📢 **Broadcast Completed!**\n\n"
+                f"✅ Successfully sent to: `{success}` users\n"
+                f"❌ Failed (Blocked bot): `{failed}` users"
+            )
+            bot.send_message(message.chat.id, report, parse_mode='Markdown')
+        except Exception as e:
+            bot.reply_to(message, f"❌ Broadcast failed due to an error: `{e}`")
 
     def process_fsub_step(message, bot):
         if message.text == '/cancel':
