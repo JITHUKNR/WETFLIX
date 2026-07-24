@@ -29,7 +29,7 @@ def load_plugins():
 load_plugins()
 
 # -----------------------------------------------------------
-# Flask Server (Render Keep-Alive)
+# Flask Server (Render Keep-Alive) - Running in background safely
 # -----------------------------------------------------------
 app = Flask(__name__)
 
@@ -38,7 +38,8 @@ def home():
     return "Ultimate Bot is running with Advanced Plugin System!"
 
 def run_flask():
-    app.run(host="0.0.0.0", port=PORT)
+    # use_reloader=False എന്നത് ഡബ്ലിൻ പ്രൊസസ്സുകൾ ഒരേസമയം റൺ ആകുന്നത് തടയും
+    app.run(host="0.0.0.0", port=PORT, use_reloader=False)
 
 # Run bot with safe auto-reconnect loop
 if __name__ == "__main__":
@@ -56,8 +57,9 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Error setting menu: {e}")
 
-    # Start Flask server in background thread
-    threading.Thread(target=run_flask).start()
+    # Start Flask server in background thread safely
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     
     # Safe polling loop to handle temporary 409 conflicts automatically
     while True:
