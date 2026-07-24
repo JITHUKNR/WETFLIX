@@ -2,7 +2,6 @@ import datetime
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 try:
-    # ഇവിടെ users_col ഇംപോർട്ട് ചെയ്തിട്ടുണ്ട് (Stats എറർ മാറാൻ)
     from database import set_fsub_data, set_cooldown, settings_col, users_col
 except ImportError:
     pass 
@@ -125,16 +124,15 @@ def setup(bot):
             bot.send_message(call.message.chat.id, "👋 Welcome message is active. Customization coming soon!")
 
         elif action == "broadcast":
-            # ബ്രോഡ്കാസ്റ്റ് ചെയ്യാൻ മെസ്സേജ് ചോദിക്കുന്ന ഭാഗം
             bot.answer_callback_query(call.id, "Broadcast Mode 📢")
             msg = bot.send_message(
                 call.message.chat.id, 
-                "📢 **Broadcast Message:**\n\n"
-                "Send the message (Text, Photo, Video, Sticker, etc.) you want to broadcast to all users.\n\n"
+                "📢 **Step 1: Send Broadcast Message**\n\n"
+                "Send the message (Text, Photo, Video, Sticker, etc.) you want to broadcast.\n\n"
                 "Type /cancel to abort.",
                 parse_mode='Markdown'
             )
-            bot.register_next_step_handler(msg, process_broadcast_step, bot)
+            bot.register_next_step_handler(msg, process_broadcast_step_1, bot)
 
         elif action == "stats":
             bot.answer_callback_query(call.id, "Fetching Details... 📊")
@@ -171,15 +169,52 @@ def setup(bot):
             bot.delete_message(call.message.chat.id, call.message.message_id)
 
     # -----------------------------------------------------------
-    # Step Handlers (Functions that process admin inputs)
+    # Step Handlers
     # -----------------------------------------------------------
     
-    def process_broadcast_step(message, bot):
+    def process_broadcast_step_1(message, bot):
         if message.text == '/cancel':
             bot.reply_to(message, "❌ Broadcast cancelled.")
             return
             
-        bot.reply_to(message, "🚀 **Broadcasting started...** Please wait, this might take some time depending on the number of users.", parse_mode='Markdown')
+        # സേവ് ചെയ്ത മെസ്സേജ് രണ്ടാമത്തെ സ്റ്റെപ്പിലേക്ക് പാസ്സ് ചെയ്യുന്നു
+        msg_to_broadcast = message
+        
+        bot_reply = bot.reply_to(
+            message, 
+            "🔘 **Step 2: Add Inline Button (Optional)**\n\n"
+            "If you want to add a button below this message, type it in this format:\n"
+            "`Button Name - https://yourlink.com`\n\n"
+            "*(Example: Join Channel - https://t.me/wetflix)*\n\n"
+            "If you don't need a button, simply type `/skip`.\n"
+            "To cancel, type `/cancel`.",
+            parse_mode='Markdown'
+        )
+        bot.register_next_step_handler(bot_reply, process_broadcast_step_2, bot, msg_to_broadcast)
+
+    def process_broadcast_step_2(message, bot, msg_to_broadcast):
+        if message.text == '/cancel':
+            bot.reply_to(message, "❌ Broadcast cancelled.")
+            return
+
+        markup = None
+        # യൂസർ ഇൻലൈൻ ബട്ടൺ നൽകിയാൽ അത് സെറ്റ് ചെയ്യുന്നു
+        if message.text != '/skip':
+            try:
+                parts = message.text.split('-', 1)
+                if len(parts) == 2:
+                    btn_text = parts[0].strip()
+                    btn_url = parts[1].strip()
+                    markup = InlineKeyboardMarkup()
+                    markup.add(InlineKeyboardButton(btn_text, url=btn_url))
+                else:
+                    bot_reply = bot.reply_to(message, "❌ Invalid format. Please use exactly like this:\n`Button Name - https://link.com`\n\nOr type `/skip` to send without a button.", parse_mode='Markdown')
+                    bot.register_next_step_handler(bot_reply, process_broadcast_step_2, bot, msg_to_broadcast)
+                    return
+            except Exception:
+                bot.reply_to(message, "❌ Error creating button. Broadcasting without button.")
+
+        bot.reply_to(message, "🚀 **Broadcasting started...** Please wait, this might take some time.", parse_mode='Markdown')
         
         try:
             users = users_col.find({})
@@ -188,8 +223,13 @@ def setup(bot):
             
             for user in users:
                 try:
-                    # copy_message ഉപയോഗിക്കുന്നത് വഴി ഫോട്ടോയും വീഡിയോയും സഹിതം എല്ലാം കൃത്യമായി ഫോർവേഡ് ടാഗ് ഇല്ലാതെ പോകും
-                    bot.copy_message(chat_id=user['user_id'], from_chat_id=message.chat.id, message_id=message.message_id)
+                    # ഫോട്ടോയോ വീഡിയോയോ ടെക്സ്റ്റോ ഇൻലൈൻ ബട്ടൺ ഉൾപ്പെടെ ഫോർവേഡ് ടാഗ് ഇല്ലാതെ അയക്കുന്നു
+                    bot.copy_message(
+                        chat_id=user['user_id'], 
+                        from_chat_id=msg_to_broadcast.chat.id, 
+                        message_id=msg_to_broadcast.message_id,
+                        reply_markup=markup
+                    )
                     success += 1
                 except Exception:
                     failed += 1
