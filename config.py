@@ -1,7 +1,12 @@
 import os
+from pymongo import MongoClient
 
-# ബോട്ടിന്റെ ടോക്കണും മറ്റ് വിവരങ്ങളും ഇവിടെ സുരക്ഷിതമായി സൂക്ഷിക്കുന്നു
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "നിങ്ങളുടെ_ടോക്കൺ")
-MONGO_URI = os.environ.get("MONGO_URI", "നിങ്ങളുടെ_മൊംഗോ_ലിങ്ക്")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", 123456789)) # താങ്കളുടെ ഐഡി
-PORT = int(os.environ.get("PORT", 5000))
+# Bot credentials and settings
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+MONGO_URI = os.environ.get("MONGO_URI", "")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+PORT = int(os.environ.get("PORT", 10000))
+
+# MongoDB Database Initialization
+client = MongoClient(MONGO_URI)
+db = client["wetflix_database"]
