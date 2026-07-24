@@ -3,11 +3,9 @@ from config import ADMIN_ID
 try:
     from database import set_fsub_data
 except ImportError:
-    pass # To prevent errors if the database file is missing
+    pass 
 
 def setup(bot):
-
-    # 1. Command to open the Admin Panel
     @bot.message_handler(commands=['admin'])
     def send_admin_panel(message):
         if message.from_user.id != ADMIN_ID:
@@ -15,14 +13,12 @@ def setup(bot):
             return
             
         markup = InlineKeyboardMarkup(row_width=2)
-        
-        # --- Buttons for all features ---
         markup.add(
             InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast"),
             InlineKeyboardButton("📊 Bot Stats", callback_data="admin_stats")
         )
         markup.add(
-            InlineKeyboardButton("⚙️ FSub Channel", callback_data="admin_fsub"),
+            InlineKeyboardButton("⚙️ FSub Channels", callback_data="admin_fsub"),
             InlineKeyboardButton("🔐 Group Locks", callback_data="admin_locks")
         )
         markup.add(
@@ -37,7 +33,6 @@ def setup(bot):
         )
         bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
 
-    # 2. Handler for button clicks
     @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
     def handle_admin_callbacks(call):
         if call.from_user.id != ADMIN_ID:
@@ -45,8 +40,6 @@ def setup(bot):
             return
             
         action = call.data.split('_')[1]
-        
-        # --- Actions for each button ---
 
         if action == "close":
             bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -56,10 +49,13 @@ def setup(bot):
             bot.answer_callback_query(call.id, "FSub Setup ⚙️")
             msg = bot.send_message(
                 call.message.chat.id, 
-                "📢 **Force Subscribe Setup:**\n\n"
-                "Please send the Channel ID and Invite Link separated by a space.\n"
-                "(Example: `-1001234567890 https://t.me/+AbCdEfGh`)\n\n"
-                "Type /cancel to cancel the operation.",
+                "📢 **Force Subscribe Setup (Multiple Channels):**\n\n"
+                "Send the Channel ID and Invite Link separated by a space.\n"
+                "For multiple channels, put each on a new line.\n\n"
+                "**Example:**\n"
+                "`-1001234567890 https://t.me/+Link1`\n"
+                "`-1009876543210 https://t.me/+Link2`\n\n"
+                "Type /cancel to abort.",
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_fsub_step, bot)
@@ -74,7 +70,7 @@ def setup(bot):
             lock_markup.add(InlineKeyboardButton("🔙 Back to Menu", callback_data="admin_back"))
             
             bot.edit_message_text(
-                "🔐 **Group Locks Manager:**\n\nSelect the items to restrict in the group:", 
+                "🔐 **Group Locks Manager:**\n\nSelect the items to restrict:", 
                 chat_id=call.message.chat.id, 
                 message_id=call.message.message_id, 
                 reply_markup=lock_markup,
@@ -95,7 +91,7 @@ def setup(bot):
 
         elif action == "welcome":
             bot.answer_callback_query(call.id, "Welcome Settings 👋")
-            bot.send_message(call.message.chat.id, "👋 Welcome message is currently active. Customization features coming soon!")
+            bot.send_message(call.message.chat.id, "👋 Welcome message is active. Customization coming soon!")
 
         elif action == "broadcast":
             bot.answer_callback_query(call.id, "Broadcast 📢")
@@ -103,30 +99,37 @@ def setup(bot):
 
         elif action == "stats":
             bot.answer_callback_query(call.id, "Bot Statistics 📊")
-            bot.send_message(call.message.chat.id, "📊 **Bot Stats:**\nType `/stats` to view the total number of users from the database.")
+            bot.send_message(call.message.chat.id, "📊 **Bot Stats:**\nType `/stats` to view the total number of users.")
 
         elif action == "back":
-            # Go back to main menu
             send_admin_panel(call.message)
             bot.delete_message(call.message.chat.id, call.message.message_id)
 
-    # 3. Step function to save FSub Channel and Link
     def process_fsub_step(message, bot):
         if message.text == '/cancel':
             bot.reply_to(message, "❌ Operation cancelled.")
             return
             
-        args = message.text.split()
-        if len(args) < 2:
-            bot.reply_to(message, "❌ Invalid format!\nPlease provide the Channel ID and Invite Link separated by a space.\nExample:\n`-1001234567890 https://t.me/+AbCdEfGh`", parse_mode='Markdown')
+        lines = message.text.strip().split('\n')
+        channels_list = []
+        
+        for line in lines:
+            args = line.strip().split()
+            if len(args) >= 2:
+                ch_id_str = args[0]
+                inv_link = args[1]
+                try:
+                    ch_id = int(ch_id_str) if ch_id_str.startswith('-100') else ch_id_str
+                    channels_list.append({"id": ch_id, "link": inv_link})
+                except ValueError:
+                    continue
+                    
+        if not channels_list:
+            bot.reply_to(message, "❌ Invalid format!\nPlease provide Channel ID and Invite Link separated by space.\nExample:\n`-1001234567890 https://t.me/+AbCdEfGh`", parse_mode='Markdown')
             return
-            
-        channel_id_str = args[0]
-        invite_link = args[1]
         
         try:
-            channel_id = int(channel_id_str) if channel_id_str.startswith('-100') else channel_id_str
-            set_fsub_data(channel_id, invite_link)
-            bot.reply_to(message, f"✅ **Force Subscribe configured successfully!**\n\n📢 Channel ID: `{channel_id}`\n🔗 Link: {invite_link}", parse_mode='Markdown')
+            set_fsub_data(channels_list)
+            bot.reply_to(message, f"✅ **Successfully configured {len(channels_list)} channel(s)!**", parse_mode='Markdown')
         except Exception as e:
             bot.reply_to(message, f"❌ Failed to save to database.\nError: `{e}`", parse_mode='Markdown')
