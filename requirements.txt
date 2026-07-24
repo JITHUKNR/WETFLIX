@@ -1,4 +1,6 @@
 pyTelegramBotAPI
 pymongo
-Flask
 certifi
+Flask
+psutil
+qrcode
