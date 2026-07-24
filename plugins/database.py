@@ -26,3 +26,17 @@ def add_requested_user(user_id):
 def is_user_requested(user_id):
     data = requested_users_collection.find_one({"user_id": user_id})
     return True if data else False
+# Add this to the bottom of your existing database.py
+
+def set_cooldown(minutes):
+    settings_collection.update_one(
+        {"_id": "bot_settings"}, 
+        {"$set": {"cooldown": minutes}}, 
+        upsert=True
+    )
+
+def get_cooldown():
+    data = settings_collection.find_one({"_id": "bot_settings"})
+    if data and "cooldown" in data:
+        return data["cooldown"]
+    return 3  # Default delay is 3 minutes
