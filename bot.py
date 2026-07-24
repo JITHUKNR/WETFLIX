@@ -29,7 +29,7 @@ def load_plugins():
 load_plugins()
 
 # -----------------------------------------------------------
-# Flask Server (Render Keep-Alive) - Running in background safely
+# Flask Server (Render Keep-Alive) - Lightweight ping responder
 # -----------------------------------------------------------
 app = Flask(__name__)
 
@@ -38,15 +38,19 @@ def home():
     return "Ultimate Bot is running with Advanced Plugin System!"
 
 def run_flask():
-    # use_reloader=False എന്നത് ഡബ്ലിൻ പ്രൊസസ്സുകൾ ഒരേസമയം റൺ ആകുന്നത് തടയും
-    app.run(host="0.0.0.0", port=PORT, use_reloader=False)
+    try:
+        app.run(host="0.0.0.0", port=PORT, use_reloader=False, debug=False)
+    except Exception as e:
+        print(f"Flask error: {e}")
 
 # Run bot with safe auto-reconnect loop
 if __name__ == "__main__":
     print("🚀 Bot is starting...")
     
     try:
+        # വെബ്ഹൂക്കുകൾ പൂർണ്ണമായി ക്ലിയർ ചെയ്ത് പോളിംഗിനായി സെറ്റ് ചെയ്യുന്നു
         bot.remove_webhook()
+        time.sleep(1)
         bot.set_my_commands([
             BotCommand("start", "Start the bot"),
             BotCommand("sticker", "Get a random sticker"),
