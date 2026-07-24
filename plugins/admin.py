@@ -1,7 +1,7 @@
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 try:
-    from database import set_fsub_data
+    from database import set_fsub_data, set_cooldown
 except ImportError:
     pass 
 
@@ -25,11 +25,14 @@ def setup(bot):
             InlineKeyboardButton("🛡️ Moderation Tools", callback_data="admin_mod"),
             InlineKeyboardButton("👋 Welcome Setup", callback_data="admin_welcome")
         )
-        markup.add(InlineKeyboardButton("❌ Close Panel", callback_data="admin_close"))
+        markup.add(
+            InlineKeyboardButton("⏳ Command Delay", callback_data="admin_delay"), 
+            InlineKeyboardButton("❌ Close Panel", callback_data="admin_close")
+        )
         
         text = (
             "🛠 **WETFLIX SUPER ADMIN PANEL**\n\n"
-            "Use the buttons below to manage all bot features:"
+            "Use the buttons below to manage all bot features directly:"
         )
         bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
 
@@ -53,12 +56,23 @@ def setup(bot):
                 "Send the Channel ID and Invite Link separated by a space.\n"
                 "For multiple channels, put each on a new line.\n\n"
                 "**Example:**\n"
-                "`-1001234567890 https://t.me/+Link1`\n"
-                "`-1009876543210 https://t.me/+Link2`\n\n"
+                "`-1001234567890 https://t.me/+Link1`\n\n"
                 "Type /cancel to abort.",
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_fsub_step, bot)
+
+        elif action == "delay":
+            bot.answer_callback_query(call.id, "Delay Settings ⏳")
+            msg = bot.send_message(
+                call.message.chat.id, 
+                "⏳ **Set Command Delay (Cooldown):**\n\n"
+                "Enter the delay time in minutes for videos, images, and stickers.\n"
+                "(Example: Type `2` for 2 minutes).\n\n"
+                "Type /cancel to abort.",
+                parse_mode='Markdown'
+            )
+            bot.register_next_step_handler(msg, process_delay_step, bot)
 
         elif action == "locks":
             bot.answer_callback_query(call.id, "Group Locks 🔐")
@@ -125,7 +139,7 @@ def setup(bot):
                     continue
                     
         if not channels_list:
-            bot.reply_to(message, "❌ Invalid format!\nPlease provide Channel ID and Invite Link separated by space.\nExample:\n`-1001234567890 https://t.me/+AbCdEfGh`", parse_mode='Markdown')
+            bot.reply_to(message, "❌ Invalid format!\nPlease provide Channel ID and Invite Link separated by space.", parse_mode='Markdown')
             return
         
         try:
@@ -133,3 +147,15 @@ def setup(bot):
             bot.reply_to(message, f"✅ **Successfully configured {len(channels_list)} channel(s)!**", parse_mode='Markdown')
         except Exception as e:
             bot.reply_to(message, f"❌ Failed to save to database.\nError: `{e}`", parse_mode='Markdown')
+
+    def process_delay_step(message, bot):
+        if message.text == '/cancel':
+            bot.reply_to(message, "❌ Operation cancelled.")
+            return
+            
+        try:
+            minutes = int(message.text.strip())
+            set_cooldown(minutes)
+            bot.reply_to(message, f"✅ **Command delay successfully set to {minutes} minutes!**", parse_mode='Markdown')
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid input. Please enter a valid number (e.g., 2).", parse_mode='Markdown')
