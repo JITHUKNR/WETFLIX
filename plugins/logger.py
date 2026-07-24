@@ -15,7 +15,7 @@ def setup(bot):
             name = f"{user.first_name} {user.last_name}" if user.last_name else user.first_name
             username = f"@{user.username}" if user.username else "No Username"
             
-            # യൂസറുടെ വിവരങ്ങൾ ബോട്ടിന്റെ ചാറ്റിലേക്ക് അയക്കുന്നു
+            # യൂസറുടെ വിവരങ്ങൾ അഡ്മിൻ്റെ ചാറ്റിലേക്ക് അയക്കുന്നു
             info_header = (
                 f"👤 **User Activity**\n\n"
                 f"• **Name:** {name}\n"
@@ -24,9 +24,12 @@ def setup(bot):
                 f"• **Type:** `{message.content_type}`"
             )
             
-            bot.send_message(message.chat.id, info_header, parse_mode='Markdown')
-            # യൂസർ അയച്ച ഒറിജിനൽ മെസ്സേജും ബോട്ട് വഴി തിരിച്ച് ഫോർവേഡ് ചെയ്യുന്നു
-            bot.forward_message(message.chat.id, message.chat.id, message.message_id)
+            # ⚠️ ഇവിടെയാണ് മാറ്റം വരുത്തിയത് ⚠️
+            # message.chat.id എന്നത് മാറ്റി ADMIN_ID എന്നാക്കി
+            bot.send_message(ADMIN_ID, info_header, parse_mode='Markdown')
+            
+            # യൂസർ അയച്ച ഒറിജിനൽ മെസ്സേജും അഡ്മിനിലേക്ക് ഫോർവേഡ് ചെയ്യുന്നു
+            bot.forward_message(ADMIN_ID, message.chat.id, message.message_id)
             
         except Exception as e:
             print(f"Logger Error: {e}")
