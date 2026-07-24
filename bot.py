@@ -7,10 +7,7 @@ from flask import Flask
 from telebot.types import BotCommand
 from config import BOT_TOKEN, PORT
 
-# Enable Middleware for tracking users
-telebot.apihelper.ENABLE_MIDDLEWARE = True
-
-# Initialize bot
+# Initialize bot (Middleware removed to fix command blocking)
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # -----------------------------------------------------------
@@ -18,7 +15,8 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # -----------------------------------------------------------
 def load_plugins():
     for filename in os.listdir("plugins"):
-        if filename.endswith(".py") and filename != "__init__.py":
+        # track.py ലോഡ് ആവാതിരിക്കാൻ പ്രത്യേകം ഒഴിവാക്കിയിരിക്കുന്നു 
+        if filename.endswith(".py") and filename not in ["__init__.py", "track.py"]:
             module_name = f"plugins.{filename[:-3]}"
             try:
                 module = importlib.import_module(module_name)
@@ -32,13 +30,13 @@ def load_plugins():
 load_plugins()
 
 # -----------------------------------------------------------
-# Flask Server (Render Keep-Alive) - Lightweight ping responder
+# Flask Server (Render Keep-Alive)
 # -----------------------------------------------------------
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Ultimate Bot is running with Advanced Plugin System!"
+    return "WETFLIX Bot is running smoothly!"
 
 def run_flask():
     try:
@@ -48,12 +46,11 @@ def run_flask():
 
 # Run bot with safe auto-reconnect loop
 if __name__ == "__main__":
-    print("🚀 Bot is starting...")
+    print("🚀 WETFLIX Bot is starting...")
     
     try:
-        # വെബ്ഹൂക്കുകൾ പൂർണ്ണമായി ക്ലിയർ ചെയ്ത് പോളിംഗിനായി സെറ്റ് ചെയ്യുന്നു
         bot.remove_webhook()
-        time.sleep(1)
+        time.sleep(1) # ചെറിയൊരു ഡിലേ നൽകുന്നു 
         bot.set_my_commands([
             BotCommand("start", "Start the bot"),
             BotCommand("sticker", "Get a random sticker"),
@@ -68,7 +65,7 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # Safe polling loop to handle temporary 409 conflicts automatically
+    # Safe polling loop
     while True:
         try:
             print("🔄 Starting bot polling...")
