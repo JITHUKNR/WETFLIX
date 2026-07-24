@@ -1,7 +1,7 @@
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 try:
-    from database import set_fsub_data, set_cooldown
+    from database import set_fsub_data, set_cooldown, settings_col
 except ImportError:
     pass 
 
@@ -27,6 +27,9 @@ def setup(bot):
         )
         markup.add(
             InlineKeyboardButton("⏳ Command Delay", callback_data="admin_delay"), 
+            InlineKeyboardButton("⏱️ Auto-Delete Time", callback_data="admin_deletetime")
+        )
+        markup.add(
             InlineKeyboardButton("❌ Close Panel", callback_data="admin_close")
         )
         
@@ -73,6 +76,18 @@ def setup(bot):
                 parse_mode='Markdown'
             )
             bot.register_next_step_handler(msg, process_delay_step, bot)
+
+        elif action == "deletetime":
+            bot.answer_callback_query(call.id, "Auto-Delete Timer ⏱️")
+            msg = bot.send_message(
+                call.message.chat.id, 
+                "⏱️ **Set Auto-Delete Time:**\n\n"
+                "Enter the auto-delete time in seconds for media files.\n"
+                "(Example: Type `5` for 5 seconds, or `30` for 30 seconds).\n\n"
+                "Type /cancel to abort.",
+                parse_mode='Markdown'
+            )
+            bot.register_next_step_handler(msg, process_deletetime_step, bot)
 
         elif action == "locks":
             bot.answer_callback_query(call.id, "Group Locks 🔐")
@@ -159,3 +174,23 @@ def setup(bot):
             bot.reply_to(message, f"✅ **Command delay successfully set to {minutes} minutes!**", parse_mode='Markdown')
         except ValueError:
             bot.reply_to(message, "❌ Invalid input. Please enter a valid number (e.g., 2).", parse_mode='Markdown')
+
+    def process_deletetime_step(message, bot):
+        if message.text == '/cancel':
+            bot.reply_to(message, "❌ Operation cancelled.")
+            return
+            
+        try:
+            new_time = float(message.text.strip())
+            if new_time < 1:
+                bot.reply_to(message, "⚠️ Time must be at least 1 second.")
+                return
+                
+            settings_col.update_one(
+                {"_id": "bot_settings"},
+                {"$set": {"delete_time": new_time}},
+                upsert=True
+            )
+            bot.reply_to(message, f"✅ **Auto-delete time successfully set to {new_time} seconds!**", parse_mode='Markdown')
+        except ValueError:
+            bot.reply_to(message, "❌ Invalid input. Please enter a valid number (e.g., 5 or 30).", parse_mode='Markdown')
