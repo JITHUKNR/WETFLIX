@@ -2,6 +2,7 @@ import telebot
 import os
 import importlib
 import threading
+import time
 from flask import Flask
 from telebot.types import BotCommand
 from config import BOT_TOKEN, PORT
@@ -39,27 +40,30 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=PORT)
 
-# Run bot
+# Run bot with safe auto-reconnect loop
 if __name__ == "__main__":
     print("🚀 Bot is starting...")
     
     try:
-        # Clear any existing webhooks and stuck states to prevent 409 conflict
         bot.remove_webhook()
-        
-        # Set Bot Commands (Hides admin command from the menu)
         bot.set_my_commands([
             BotCommand("start", "Start the bot"),
             BotCommand("sticker", "Get a random sticker"),
             BotCommand("video", "Get a random video"),
             BotCommand("image", "Get a random photo")
         ])
-        print("✅ Menu updated successfully! (Admin command hidden)")
+        print("✅ Menu updated successfully!")
     except Exception as e:
         print(f"❌ Error setting menu: {e}")
 
     # Start Flask server in background thread
     threading.Thread(target=run_flask).start()
     
-    # Start polling safely, skipping pending stuck updates
-    bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+    # Safe polling loop to handle temporary 409 conflicts automatically
+    while True:
+        try:
+            print("🔄 Starting bot polling...")
+            bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"⚠️ Polling reconnected after error: {e}")
+            time.sleep(5)
