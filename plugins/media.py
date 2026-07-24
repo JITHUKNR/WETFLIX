@@ -10,8 +10,15 @@ user_cooldowns = {}
 def get_dynamic_cooldown():
     data = settings_col.find_one({"_id": "bot_settings"})
     if data and "cooldown" in data:
-        return int(data["cooldown"]) * 60  # Convert minutes to seconds
+        return int(data["cooldown"]) * 60  
     return 180  
+
+# Fetch auto-delete time dynamically from database (Default is 30 seconds)
+def get_delete_time():
+    data = settings_col.find_one({"_id": "bot_settings"})
+    if data and "delete_time" in data:
+        return float(data["delete_time"])
+    return 30.0  
 
 def is_maintenance():
     state = settings_col.find_one({"_id": "maintenance"})
@@ -47,7 +54,37 @@ def setup(bot):
     bot_instance = bot
 
     # -----------------------------------------------------------
-    # Media Request Handler (Video, Image, Sticker) with FSub & Dynamic Cooldown
+    # Admin Command to Change Auto-Delete Time (e.g., /settime 5 or /settime 2)
+    # -----------------------------------------------------------
+    @bot.message_handler(commands=['settime'])
+    def set_delete_time_cmd(message):
+        if message.from_user.id != ADMIN_ID:
+            bot.reply_to(message, "❌ You are not authorized to use this command.")
+            return
+            
+        args = message.text.split()
+        if len(args) < 2:
+            current_t = get_delete_time()
+            bot.reply_to(message, f"⏱️ Current auto-delete time is **{current_t} seconds**.\n\nUsage: `/settime 5` or `/settime 2`", parse_mode='Markdown')
+            return
+            
+        try:
+            new_time = float(args[1])
+            if new_time < 1:
+                bot.reply_to(message, "⚠️ Time must be at least 1 second.")
+                return
+                
+            settings_col.update_one(
+                {"_id": "bot_settings"},
+                {"$set": {"delete_time": new_time}},
+                upsert=True
+            )
+            bot.reply_to(message, f"✅ Auto-delete time successfully updated to **{new_time} seconds**!", parse_mode='Markdown')
+        except ValueError:
+            bot.reply_to(message, "❌ Please enter a valid number (e.g., `/settime 5`)", parse_mode='Markdown')
+
+    # -----------------------------------------------------------
+    # Media Request Handler (Video, Image, Sticker)
     # -----------------------------------------------------------
     def process_media_request(message, db_collection, send_function, error_text):
         user_id = message.from_user.id
@@ -91,10 +128,20 @@ def setup(bot):
         
         if random_item:
             file_id = random_item[0]["file_id"]
-            sent_msg = send_function(message.chat.id, file_id)
+            
+            # ഡിലീറ്റ് ആകുന്ന സമയം ഡാറ്റാബേസിൽ നിന്ന് എടുക്കുന്നു
+            del_time = get_delete_time()
+            caption = f"⚠️ *This file will auto-delete in {int(del_time)} seconds! Forward or save it quickly.*"
+            
+            try:
+                sent_msg = send_function(message.chat.id, file_id, caption=caption, parse_mode='Markdown')
+            except TypeError:
+                sent_msg = send_function(message.chat.id, file_id)
+            
             user_cooldowns[user_id] = time.time()
-            # Auto-delete sent media after 3 minutes
-            threading.Timer(180.0, delete_message_after_delay, args=[message.chat.id, sent_msg.message_id]).start()
+            
+            # ഡാറ്റാബേസിൽ സെറ്റ് ചെയ്തിരിക്കുന്ന സമയം അനുസരിച്ച് ഓട്ടോ-ഡിലീറ്റ് ആകുന്നു
+            threading.Timer(del_time, delete_message_after_delay, args=[message.chat.id, sent_msg.message_id]).start()
         else:
             bot.reply_to(message, error_text)
 
