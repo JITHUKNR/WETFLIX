@@ -3,19 +3,51 @@ import os
 import importlib
 import threading
 import time
+import datetime
 from flask import Flask
 from telebot.types import BotCommand
 from config import BOT_TOKEN, PORT
 
-# Initialize bot (Middleware removed to fix command blocking)
+# Database import for tracking
+try:
+    from database import users_col
+except ImportError:
+    pass
+
+# Initialize bot
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# -----------------------------------------------------------
+# Silent User Tracking System (Update Listener)
+# -----------------------------------------------------------
+def activity_tracker(messages):
+    for message in messages:
+        try:
+            # ഓരോ മെസ്സേജ് വരുമ്പോഴും യൂസറുടെ സമയം ഡാറ്റാബേസിൽ സേവ് ചെയ്യുന്നു
+            if message.from_user:
+                user_id = message.from_user.id
+                now = datetime.datetime.now()
+                if 'users_col' in globals():
+                    users_col.update_one(
+                        {"user_id": user_id},
+                        {
+                            "$set": {"last_active": now}, 
+                            "$setOnInsert": {"joined_date": now, "banned": False}
+                        },
+                        upsert=True
+                    )
+        except Exception:
+            pass
+
+# ട്രാക്കിംഗ് സിസ്റ്റം ബോട്ടുമായി കണക്ട് ചെയ്യുന്നു
+bot.set_update_listener(activity_tracker)
 
 # -----------------------------------------------------------
 # Plugin System (Auto-load features from plugins folder)
 # -----------------------------------------------------------
 def load_plugins():
     for filename in os.listdir("plugins"):
-        # track.py ലോഡ് ആവാതിരിക്കാൻ പ്രത്യേകം ഒഴിവാക്കിയിരിക്കുന്നു 
+        # track.py ഉണ്ടെങ്കിൽ അത് ഒഴിവാക്കുന്നു 
         if filename.endswith(".py") and filename not in ["__init__.py", "track.py"]:
             module_name = f"plugins.{filename[:-3]}"
             try:
@@ -50,7 +82,7 @@ if __name__ == "__main__":
     
     try:
         bot.remove_webhook()
-        time.sleep(1) # ചെറിയൊരു ഡിലേ നൽകുന്നു 
+        time.sleep(1)
         bot.set_my_commands([
             BotCommand("start", "Start the bot"),
             BotCommand("sticker", "Get a random sticker"),
