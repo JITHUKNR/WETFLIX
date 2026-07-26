@@ -3,12 +3,25 @@ import os
 import importlib
 import threading
 import time
+import traceback  # എറർ കണ്ടുപിടിക്കാൻ പുതിയതായി ചേർത്തത്
 from flask import Flask
 from telebot.types import BotCommand
 from config import BOT_TOKEN, PORT
 
-# Initialize bot (Clean initialization without blocking listeners)
-bot = telebot.TeleBot(BOT_TOKEN)
+# -----------------------------------------------------------
+# Error Catcher System (എററുകൾ ലോഗിൽ കൃത്യമായി കാണിക്കാൻ)
+# -----------------------------------------------------------
+class ExceptionHandler(telebot.ExceptionHandler):
+    def handle(self, exception):
+        print("\n" + "="*50)
+        print("🔥 BOT CRASHED OR COMMAND FAILED! 🔥")
+        print("👇 എറർ വന്ന ഫയലും ലൈൻ നമ്പറും താഴെ നോക്കുക 👇\n")
+        traceback.print_exc()
+        print("="*50 + "\n")
+        return True
+
+# Initialize bot (Clean initialization + Error Catcher)
+bot = telebot.TeleBot(BOT_TOKEN, exception_handler=ExceptionHandler())
 
 # -----------------------------------------------------------
 # Plugin System (Priority Loading added!)
