@@ -24,10 +24,10 @@ class ExceptionHandler(telebot.ExceptionHandler):
 bot = telebot.TeleBot(BOT_TOKEN, exception_handler=ExceptionHandler())
 
 # -----------------------------------------------------------
-# Plugin System (Priority Loading added!)
+# Plugin System (Sorted Priority Loading!)
 # -----------------------------------------------------------
 def load_plugins():
-    # 1. ഏറ്റവും ആദ്യം start.py ലോഡ് ചെയ്യുന്നു (മറ്റ് പ്ലഗിനുകൾ കമാൻഡ് ബ്ലോക്ക് ചെയ്യാതിരിക്കാൻ)
+    # 1. ഏറ്റവും ആദ്യം start.py ലോഡ് ചെയ്യുന്നു
     try:
         if os.path.exists("plugins/start.py"):
             importlib.import_module("plugins.start").setup(bot)
@@ -35,8 +35,9 @@ def load_plugins():
     except Exception as e:
         print(f"❌ Failed to load start.py: {e}")
 
-    # 2. ബാക്കിയുള്ള പ്ലഗിനുകൾ എല്ലാം അതിനുശേഷം മാത്രം ലോഡ് ചെയ്യുന്നു
-    for filename in os.listdir("plugins"):
+    # 2. ബാക്കിയുള്ള പ്ലഗിനുകൾ എല്ലാം അക്ഷരമാലാ ക്രമത്തിൽ (Sorted) ലോഡ് ചെയ്യുന്നു
+    # ഇവിടെയാണ് നമ്മൾ sorted() ചേർത്തത്!
+    for filename in sorted(os.listdir("plugins")):
         # track.py ഉം ഇപ്പോൾ ലോഡ് ചെയ്ത start.py ഉം ഒഴിവാക്കുന്നു
         if filename.endswith(".py") and filename not in ["__init__.py", "track.py", "start.py"]:
             module_name = f"plugins.{filename[:-3]}"
@@ -91,7 +92,6 @@ if __name__ == "__main__":
     while True:
         try:
             print("🔄 Starting bot polling...")
-            # skip_pending=True കൊടുത്തിട്ടുള്ളതുകൊണ്ട് ബോട്ട് ഓഫ് ആയിരുന്ന സമയത്തെ മെസ്സേജുകൾ സ്കിപ്പ് ചെയ്യും
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
         except Exception as e:
             print(f"⚠️ Polling Error: {e}")
