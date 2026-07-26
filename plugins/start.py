@@ -1,5 +1,11 @@
+import datetime
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import get_fsub_data, is_user_requested
+# ഡാറ്റാബേസിലേക്ക് യൂസറെ സേവ് ചെയ്യാൻ ഇത് ആവശ്യമാണ്
+try:
+    from database import users_col
+except ImportError:
+    users_col = None
 
 def is_subscribed(bot, user_id, channel):
     if is_user_requested(user_id):
@@ -16,6 +22,23 @@ def setup(bot):
     def start_command(message):
         user_id = message.from_user.id
         first_name = message.from_user.first_name
+        
+        # --- 🚨 പുതിയ യൂസറെ കൃത്യമായി ഡാറ്റാബേസിൽ സേവ് ചെയ്യുന്നു (Count വർദ്ധിക്കാൻ ഇത് നിർബന്ധമാണ്) ---
+        if users_col is not None:
+            try:
+                user_exists = users_col.find_one({"user_id": user_id})
+                if not user_exists:
+                    now = datetime.datetime.now()
+                    users_col.insert_one({
+                        "user_id": user_id,
+                        "first_name": first_name,
+                        "joined_date": now,
+                        "banned": False
+                    })
+            except Exception as e:
+                print(f"Database Save Error: {e}")
+        # -------------------------------------------------------------------------
+
         channels = get_fsub_data()
         
         not_joined = []
@@ -71,7 +94,13 @@ def setup(bot):
         if not not_joined:
             bot.answer_callback_query(call.id, "✅ Verification successful!", show_alert=True)
             bot.delete_message(call.message.chat.id, call.message.message_id)
-            bot.send_message(call.message.chat.id, "✅ **Verification Complete!**\nYou can now use the bot. Type /start to begin.", parse_mode='Markdown')
+            
+            # User verification success text
+            success_text = (
+                f"✅ **Verification Complete!**\n"
+                f"You can now fully use the bot. Type /start to begin."
+            )
+            bot.send_message(call.message.chat.id, success_text, parse_mode='Markdown')
         else:
             bot.answer_callback_query(call.id, "❌ Please join all required channels first!", show_alert=True)
 
