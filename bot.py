@@ -11,12 +11,21 @@ from config import BOT_TOKEN, PORT
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # -----------------------------------------------------------
-# Plugin System (Auto-load features from plugins folder)
+# Plugin System (Priority Loading added!)
 # -----------------------------------------------------------
 def load_plugins():
+    # 1. ഏറ്റവും ആദ്യം start.py ലോഡ് ചെയ്യുന്നു (മറ്റ് പ്ലഗിനുകൾ കമാൻഡ് ബ്ലോക്ക് ചെയ്യാതിരിക്കാൻ)
+    try:
+        if os.path.exists("plugins/start.py"):
+            importlib.import_module("plugins.start").setup(bot)
+            print("✅ Loaded plugin: start.py (PRIORITY)")
+    except Exception as e:
+        print(f"❌ Failed to load start.py: {e}")
+
+    # 2. ബാക്കിയുള്ള പ്ലഗിനുകൾ എല്ലാം അതിനുശേഷം മാത്രം ലോഡ് ചെയ്യുന്നു
     for filename in os.listdir("plugins"):
-        # ട്രാക്കിംഗ് പ്ലഗിൻ കാരണം കമാൻഡുകൾ ബ്ലോക്ക് ആവാതിരിക്കാൻ അത് ഒഴിവാക്കുന്നു
-        if filename.endswith(".py") and filename not in ["__init__.py", "track.py"]:
+        # track.py ഉം ഇപ്പോൾ ലോഡ് ചെയ്ത start.py ഉം ഒഴിവാക്കുന്നു
+        if filename.endswith(".py") and filename not in ["__init__.py", "track.py", "start.py"]:
             module_name = f"plugins.{filename[:-3]}"
             try:
                 module = importlib.import_module(module_name)
@@ -72,4 +81,5 @@ if __name__ == "__main__":
             # skip_pending=True കൊടുത്തിട്ടുള്ളതുകൊണ്ട് ബോട്ട് ഓഫ് ആയിരുന്ന സമയത്തെ മെസ്സേജുകൾ സ്കിപ്പ് ചെയ്യും
             bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
         except Exception as e:
+            print(f"⚠️ Polling Error: {e}")
             time.sleep(5)
