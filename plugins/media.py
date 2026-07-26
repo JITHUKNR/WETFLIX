@@ -6,113 +6,121 @@ from config import ADMIN_ID
 
 user_cooldowns = {}
 
-# Fetch cooldown time dynamically from database in seconds (Default is 180 seconds = 3 minutes)
+# സുരക്ഷിതമായ ഡാറ്റാബേസ് ഫെച്ചിങ്
 def get_dynamic_cooldown():
-    data = settings_col.find_one({"_id": "bot_settings"})
-    if data and "cooldown" in data:
-        return float(data["cooldown"])  
+    try:
+        data = settings_col.find_one({"_id": "bot_settings"})
+        if data and "cooldown" in data:
+            return float(data["cooldown"])  
+    except:
+        pass
     return 180.0  
 
-# Fetch auto-delete time dynamically from database (Default is 30 seconds)
 def get_delete_time():
-    data = settings_col.find_one({"_id": "bot_settings"})
-    if data and "delete_time" in data:
-        return float(data["delete_time"])
+    try:
+        data = settings_col.find_one({"_id": "bot_settings"})
+        if data and "delete_time" in data:
+            return float(data["delete_time"])
+    except:
+        pass
     return 30.0  
 
 def is_maintenance():
-    state = settings_col.find_one({"_id": "maintenance"})
-    return state["status"] if state else False
+    try:
+        state = settings_col.find_one({"_id": "maintenance"})
+        return state["status"] if state else False
+    except:
+        return False
 
 def is_user_subscribed(bot, user_id):
-    channels = get_fsub_data()
-    if not channels:
-        return True
-        
-    if is_user_requested(user_id):
-        return True
-        
-    for ch in channels:
-        try:
+    try:
+        channels = get_fsub_data()
+        if not channels:
+            return True
+            
+        if is_user_requested(user_id):
+            return True
+            
+        for ch in channels:
             status = bot.get_chat_member(ch["id"], user_id).status
             if status not in ['member', 'administrator', 'creator']:
                 return False
-        except:
-            return False
-    return True
+        return True
+    except:
+        return False
 
-def delete_message_after_delay(chat_id, message_id):
+def delete_message_after_delay(bot_instance, chat_id, message_id):
     try:
         bot_instance.delete_message(chat_id, message_id)
     except:
         pass
 
-bot_instance = None
-
 def setup(bot):
-    global bot_instance
-    bot_instance = bot
 
     # -----------------------------------------------------------
     # Media Request Handler (Video, Image, Sticker)
     # -----------------------------------------------------------
     def process_media_request(message, db_collection, send_function, error_text):
-        user_id = message.from_user.id
-        
-        # Check Maintenance Mode
-        if is_maintenance() and user_id != ADMIN_ID:
-            bot.reply_to(message, "⚙️ The bot is currently under maintenance. Please try again later.")
-            return
+        try:
+            user_id = message.from_user.id
             
-        # Check Banned Status
-        user_data = users_col.find_one({"user_id": user_id})
-        if user_data and user_data.get("banned", False):
-            bot.reply_to(message, "🚫 You are banned from using this bot.")
-            return
-
-        # Force Subscribe Check (Admin is exempt)
-        if user_id != ADMIN_ID and not is_user_subscribed(bot, user_id):
-            channels = get_fsub_data()
-            markup = InlineKeyboardMarkup(row_width=1)
-            for idx, ch in enumerate(channels, start=1):
-                markup.add(InlineKeyboardButton(f"📢 Join Channel {idx}", url=ch["link"]))
-            markup.add(InlineKeyboardButton("✅ I have requested / joined", callback_data="check_sub"))
-            
-            bot.reply_to(message, "⚠️ **To use this command, you must send join requests to our official channels!** 👇", reply_markup=markup, parse_mode='Markdown')
-            return
-
-        # Dynamic Cooldown Timer Check in Seconds (Admin is exempt)
-        cooldown_limit = get_dynamic_cooldown()
-        if user_id != ADMIN_ID:
-            current_time = time.time()
-            last_time = user_cooldowns.get(user_id, 0)
-            if current_time - last_time < cooldown_limit:
-                remaining = int(cooldown_limit - (current_time - last_time))
-                warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.")
-                threading.Timer(10.0, delete_message_after_delay, args=[message.chat.id, warn_msg.message_id]).start()
+            # Check Maintenance Mode
+            if is_maintenance() and user_id != ADMIN_ID:
+                bot.reply_to(message, "⚙️ The bot is currently under maintenance. Please try again later.")
+                return
+                
+            # Check Banned Status
+            user_data = users_col.find_one({"user_id": user_id})
+            if user_data and user_data.get("banned", False):
+                bot.reply_to(message, "🚫 You are banned from using this bot.")
                 return
 
-        # Fetch Random Item from Database
-        random_item = list(db_collection.aggregate([{"$sample": {"size": 1}}]))
-        
-        if random_item:
-            file_id = random_item[0]["file_id"]
+            # Force Subscribe Check (Admin is exempt)
+            if user_id != ADMIN_ID and not is_user_subscribed(bot, user_id):
+                channels = get_fsub_data()
+                markup = InlineKeyboardMarkup(row_width=1)
+                if channels:
+                    for idx, ch in enumerate(channels, start=1):
+                        markup.add(InlineKeyboardButton(f"📢 Join Channel {idx}", url=ch["link"]))
+                markup.add(InlineKeyboardButton("✅ I have requested / joined", callback_data="check_sub"))
+                
+                bot.reply_to(message, "⚠️ **To use this command, you must send join requests to our official channels!** 👇", reply_markup=markup, parse_mode='Markdown')
+                return
+
+            # Dynamic Cooldown Timer Check
+            cooldown_limit = get_dynamic_cooldown()
+            if user_id != ADMIN_ID:
+                current_time = time.time()
+                last_time = user_cooldowns.get(user_id, 0)
+                if current_time - last_time < cooldown_limit:
+                    remaining = int(cooldown_limit - (current_time - last_time))
+                    warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.")
+                    threading.Timer(10.0, delete_message_after_delay, args=[bot, message.chat.id, warn_msg.message_id]).start()
+                    return
+
+            # Fetch Random Item from Database
+            random_item = list(db_collection.aggregate([{"$sample": {"size": 1}}]))
             
-            # ഡിലീറ്റ് ആകുന്ന സമയം ഡാറ്റാബേസിൽ നിന്ന് എടുക്കുന്നു
-            del_time = get_delete_time()
-            caption = f"⚠️ *This file will auto-delete in {int(del_time)} seconds! Forward or save it quickly.*"
-            
-            try:
-                sent_msg = send_function(message.chat.id, file_id, caption=caption, parse_mode='Markdown')
-            except TypeError:
-                sent_msg = send_function(message.chat.id, file_id)
-            
-            user_cooldowns[user_id] = time.time()
-            
-            # ഡാറ്റാബേസിൽ സെറ്റ് ചെയ്തിരിക്കുന്ന സമയം അനുസരിച്ച് ഓട്ടോ-ഡിലീറ്റ് ആകുന്നു
-            threading.Timer(del_time, delete_message_after_delay, args=[message.chat.id, sent_msg.message_id]).start()
-        else:
-            bot.reply_to(message, error_text)
+            if random_item:
+                file_id = random_item[0]["file_id"]
+                del_time = get_delete_time()
+                caption = f"⚠️ *This file will auto-delete in {int(del_time)} seconds! Forward or save it quickly.*"
+                
+                try:
+                    sent_msg = send_function(message.chat.id, file_id, caption=caption, parse_mode='Markdown')
+                except TypeError:
+                    sent_msg = send_function(message.chat.id, file_id)
+                
+                user_cooldowns[user_id] = time.time()
+                
+                threading.Timer(del_time, delete_message_after_delay, args=[bot, message.chat.id, sent_msg.message_id]).start()
+            else:
+                bot.reply_to(message, error_text)
+                
+        # എറർ വന്നാൽ അത് സൈലന്റ് ആവാതെ യൂസറെ അറിയിക്കാനുള്ള സിസ്റ്റം!
+        except Exception as e:
+            bot.reply_to(message, f"❌ Error loading media: `{e}`", parse_mode='Markdown')
+            print(f"Media Fetch Error: {e}")
 
     @bot.message_handler(commands=['sticker'])
     def cmd_sticker(message):
@@ -134,14 +142,18 @@ def setup(bot):
             if message.content_type == 'video':
                 if not videos_col.find_one({"file_id": message.video.file_id}):
                     videos_col.insert_one({"file_id": message.video.file_id})
+                    print("✅ Video saved to DB")
             
             elif message.content_type == 'photo':
                 if not images_col.find_one({"file_id": message.photo[-1].file_id}):
                     images_col.insert_one({"file_id": message.photo[-1].file_id})
+                    print("✅ Photo saved to DB")
                     
             elif message.content_type == 'sticker':
-                if not stickers_col.find_one({"vfile_id": message.sticker.file_id}):
+                # അക്ഷരത്തെറ്റ് (vfile_id) ഇവിടെ തിരുത്തിയിട്ടുണ്ട്!
+                if not stickers_col.find_one({"file_id": message.sticker.file_id}):
                     stickers_col.insert_one({"file_id": message.sticker.file_id})
+                    print("✅ Sticker saved to DB")
         except Exception as e:
             print(f"Error saving media: {e}")
 
