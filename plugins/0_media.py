@@ -1,4 +1,5 @@
 import time
+import datetime
 import threading
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import users_col, stickers_col, videos_col, images_col, settings_col, get_fsub_data, is_user_requested
@@ -75,11 +76,19 @@ def setup(bot):
                 bot.reply_to(message, "⚙️ The bot is currently under maintenance. Please try again later.")
                 return
                 
-            # Check Banned Status
+            # Check VIP and Banned Status
             user_data = users_col.find_one({"user_id": user_id})
-            if user_data and user_data.get("banned", False):
-                bot.reply_to(message, "🚫 You are banned from using this bot.")
-                return
+            is_vip = False
+            
+            if user_data:
+                if user_data.get("banned", False):
+                    bot.reply_to(message, "🚫 You are banned from using this bot.")
+                    return
+                
+                vip_until = user_data.get("vip_until")
+                if vip_until and isinstance(vip_until, datetime.datetime):
+                    if datetime.datetime.now() < vip_until:
+                        is_vip = True
 
             # Force Subscribe Check (Admin is exempt)
             if user_id != ADMIN_ID and not is_user_subscribed(bot, user_id):
@@ -93,14 +102,14 @@ def setup(bot):
                 bot.reply_to(message, "⚠️ **To use this command, you must send join requests to our official channels!** 👇", reply_markup=markup, parse_mode='Markdown')
                 return
 
-            # Dynamic Cooldown Timer Check
-            cooldown_limit = get_dynamic_cooldown()
-            if user_id != ADMIN_ID:
+            # Dynamic Cooldown Timer Check (VIP Bypass)
+            if user_id != ADMIN_ID and not is_vip:
+                cooldown_limit = get_dynamic_cooldown()
                 current_time = time.time()
                 last_time = user_cooldowns.get(user_id, 0)
                 if current_time - last_time < cooldown_limit:
                     remaining = int(cooldown_limit - (current_time - last_time))
-                    warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.")
+                    warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.\n\n💡 *Tip: Click 🎁 REFER to invite 5 friends and bypass this timer!*")
                     threading.Timer(10.0, delete_message_after_delay, args=[bot, message.chat.id, warn_msg.message_id]).start()
                     return
 
@@ -110,7 +119,11 @@ def setup(bot):
             if random_item:
                 file_id = random_item[0]["file_id"]
                 del_time = get_delete_time()
-                caption = f"⚠️ *This file will auto-delete in {int(del_time)} seconds! Forward or save it quickly.*"
+                
+                if is_vip:
+                    caption = f"👑 **VIP Access** | ⚠️ *This file will auto-delete in {int(del_time)} seconds!*"
+                else:
+                    caption = f"⚠️ *This file will auto-delete in {int(del_time)} seconds! Forward or save it quickly.*"
                 
                 try:
                     sent_msg = send_function(message.chat.id, file_id, caption=caption, parse_mode='Markdown')
