@@ -131,10 +131,10 @@ def setup(bot):
             user_id = message.from_user.id
             ref_link = f"https://t.me/{bot_info.username}?start=REF_{user_id}"
             
-            user_data = users_col.find_one({"user_id": user_id}) if users_col else None
+            # ശ്രദ്ധിക്കുക: ഇവിടെയാണ് ആ എറർ മാറ്റിയത് (is not None എന്ന് കൃത്യമായി ചേർത്തു)
+            user_data = users_col.find_one({"user_id": user_id}) if users_col is not None else None
             current_refs = user_data.get("referrals", 0) if user_data else 0
             
-            # Markdown പ്രശ്നം ഒഴിവാക്കാൻ HTML ഉപയോഗിക്കുന്നു
             text = (
                 f"🎁 <b>Invite Friends & Get VIP Access!</b>\n\n"
                 f"Share your unique link with friends. If <b>5 people</b> join using your link, "
@@ -145,7 +145,6 @@ def setup(bot):
             bot.reply_to(message, text, parse_mode='HTML')
             
         except Exception as e:
-            # എറർ എന്താണെന്ന് കൃത്യമായി കാണിക്കാൻ ഇത് സഹായിക്കും
             bot.reply_to(message, f"❌ Error generating invite link: `{e}`", parse_mode='Markdown')
             print(f"Referral Error: {e}")
 
