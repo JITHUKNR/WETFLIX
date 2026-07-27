@@ -72,13 +72,13 @@ def setup(bot):
                 f"💡 <i>Tip: Use the buttons below to explore features seamlessly!</i>"
             )
             
-            # താഴെ വരുന്ന ചതുരത്തിലുള്ള ബട്ടണുകൾ ഉണ്ടാക്കുന്നു
+            # പുതിയ കിടിലൻ ബട്ടണുകൾ
             reply_markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-            btn1 = KeyboardButton("/image")
-            btn2 = KeyboardButton("/video")
-            btn3 = KeyboardButton("/sticker")
-            btn4 = KeyboardButton("/admin")
-            reply_markup.add(btn1, btn2, btn3, btn4)
+            btn1 = KeyboardButton("🍓 PHOTO")
+            btn2 = KeyboardButton("🔞 VIDEO")
+            btn3 = KeyboardButton("💀 STICKER")
+            
+            reply_markup.add(btn1, btn2, btn3)
             
             bot.reply_to(message, success_text, reply_markup=reply_markup, parse_mode='HTML')
 
