@@ -79,7 +79,7 @@ def setup(bot):
             btn3 = KeyboardButton("💀 STICKER")
             btn4 = KeyboardButton("💅🏻 ANIME")
             
-            reply_markup.add(btn1, btn2, btn3)
+            reply_markup.add(btn1, btn2, btn3, btn4)
             
             bot.reply_to(message, success_text, reply_markup=reply_markup, parse_mode='HTML')
 
