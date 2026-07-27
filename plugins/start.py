@@ -1,6 +1,6 @@
 import datetime
 import traceback
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from database import get_fsub_data, is_user_requested
 
 try:
@@ -47,7 +47,7 @@ def setup(bot):
                     if not is_subscribed(bot, user_id, ch["id"]):
                         not_joined.append(ch)
 
-            # 2. Force Subscribe Check
+            # 2. Force Subscribe Check (ഇത് ഇൻലൈൻ ബട്ടൺ ആയി തന്നെ തുടരും)
             if not_joined:
                 markup = InlineKeyboardMarkup(row_width=1)
                 for idx, ch in enumerate(not_joined, start=1):
@@ -62,23 +62,25 @@ def setup(bot):
                 bot.reply_to(message, fsub_text, reply_markup=markup, parse_mode='HTML')
                 return
                 
-            # 3. Main Welcome Message
+            # 3. Main Welcome Message (ഇവിടെയാണ് താഴെ വരുന്ന വലിയ ബട്ടണുകൾ സെറ്റ് ചെയ്തിരിക്കുന്നത്)
             success_text = (
                 f"⚡️ <b>Welcome to WETFLIX Ultimate Bot, {first_name}!</b> 🎉\n\n"
                 f"Your ultimate automated media destination. Here is what you can do with me:\n\n"
                 f"🖼 /image - Get high-quality random photos instantly.\n"
                 f"🔞 /video - Discover and download trending videos.\n"
                 f"🥵 /sticker - Access a massive collection of exclusive stickers.\n\n"
-                f"💡 <i>Tip: Use the commands or the Menu button below to explore features seamlessly!</i>"
+                f"💡 <i>Tip: Use the buttons below to explore features seamlessly!</i>"
             )
             
-            markup = InlineKeyboardMarkup(row_width=2)
-            markup.add(
-                InlineKeyboardButton("✨ Bot Features", callback_data="bot_features"),
-                InlineKeyboardButton("📢 Support Channel", url="https://t.me/+BP8pKgd_28ZmMDA0")
-            )
+            # താഴെ വരുന്ന ചതുരത്തിലുള്ള ബട്ടണുകൾ ഉണ്ടാക്കുന്നു
+            reply_markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+            btn1 = KeyboardButton("/image")
+            btn2 = KeyboardButton("/video")
+            btn3 = KeyboardButton("/sticker")
+            btn4 = KeyboardButton("/admin")
+            reply_markup.add(btn1, btn2, btn3, btn4)
             
-            bot.reply_to(message, success_text, reply_markup=markup, parse_mode='HTML')
+            bot.reply_to(message, success_text, reply_markup=reply_markup, parse_mode='HTML')
 
         # എറർ ഉണ്ടെങ്കിൽ അത് ബോട്ടിൽ തന്നെ കാണിക്കാൻ
         except Exception as e:
