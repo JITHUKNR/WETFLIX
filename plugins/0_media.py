@@ -1,7 +1,7 @@
 import time
 import datetime
 import threading
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultCachedVideo, InlineQueryResultCachedPhoto
 from database import users_col, stickers_col, videos_col, images_col, settings_col, get_fsub_data, is_user_requested
 from config import ADMIN_ID
 
@@ -139,6 +139,41 @@ def setup(bot):
         except Exception as e:
             bot.reply_to(message, f"❌ Error loading media: `{e}`", parse_mode='Markdown')
             print(f"Media Fetch Error: {e}")
+
+    # -----------------------------------------------------------
+    # Inline Mode Handler (പുതിയതായി ചേർത്തത്)
+    # -----------------------------------------------------------
+    @bot.inline_handler(func=lambda query: True)
+    def inline_query_handler(inline_query):
+        try:
+            query_text = inline_query.query.lower().strip()
+            results = []
+            
+            # 'photo' എന്ന് ടൈപ്പ് ചെയ്താൽ ഫോട്ടോകൾ കാണിക്കും
+            if query_text == "photo":
+                random_items = list(images_col.aggregate([{"$sample": {"size": 30}}]))
+                for idx, item in enumerate(random_items):
+                    results.append(InlineQueryResultCachedPhoto(
+                        id=f"photo_{idx}",
+                        photo_file_id=item["file_id"]
+                    ))
+            
+            # വെറുതെ യൂസർനെയിം അടിച്ചാൽ വീഡിയോകൾ കാണിക്കും
+            else:
+                random_items = list(videos_col.aggregate([{"$sample": {"size": 30}}]))
+                for idx, item in enumerate(random_items):
+                    results.append(InlineQueryResultCachedVideo(
+                        id=f"video_{idx}",
+                        video_file_id=item["file_id"],
+                        title=f"🎥 WETFLIX Video {idx+1}",
+                        description="Click to send this viral video"
+                    ))
+            
+            if results:
+                # 1 സെക്കൻഡ് കാഷെ വെക്കുന്നത് പുതിയ വീഡിയോകൾ റാൻഡം ആയി വരാൻ സഹായിക്കും
+                bot.answer_inline_query(inline_query.id, results, cache_time=1, is_personal=True)
+        except Exception as e:
+            print(f"Inline Query Error: {e}")
 
     # --- ബട്ടണുകൾ വർക്ക് ആകാൻ ചേർത്ത മാറ്റങ്ങൾ ---
     
