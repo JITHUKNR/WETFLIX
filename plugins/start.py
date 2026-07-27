@@ -23,19 +23,52 @@ def setup(bot):
         try:
             user_id = message.from_user.id
             first_name = message.from_user.first_name
+            now = datetime.datetime.now()
+            
+            # റഫറൽ വഴി വന്നതാണോ എന്ന് നോക്കുന്നു
+            parts = message.text.split()
+            referrer_id = None
+            if len(parts) > 1 and parts[1].startswith("REF_"):
+                try:
+                    referrer_id = int(parts[1].split("_")[1])
+                except:
+                    pass
             
             # 1. പുതിയ യൂസറെ കൃത്യമായി ഡാറ്റാബേസിൽ സേവ് ചെയ്യുന്നു
             if users_col is not None:
                 try:
                     user_exists = users_col.find_one({"user_id": user_id})
                     if not user_exists:
-                        now = datetime.datetime.now()
                         users_col.insert_one({
                             "user_id": user_id,
                             "first_name": first_name,
                             "joined_date": now,
-                            "banned": False
+                            "banned": False,
+                            "referrals": 0,
+                            "vip_until": None,
+                            "referred_by": referrer_id
                         })
+                        
+                        # റഫർ ചെയ്ത ആൾക്ക് പോയിൻ്റ് കൊടുക്കുന്നു
+                        if referrer_id and referrer_id != user_id:
+                            referrer_data = users_col.find_one({"user_id": referrer_id})
+                            if referrer_data:
+                                new_refs = referrer_data.get("referrals", 0) + 1
+                                
+                                if new_refs >= 5:
+                                    # 5 പേരായി! 7 ദിവസത്തെ VIP കൊടുക്കുന്നു
+                                    vip_time = now + datetime.timedelta(days=7)
+                                    users_col.update_one({"user_id": referrer_id}, {"$set": {"referrals": 0, "vip_until": vip_time}})
+                                    try:
+                                        bot.send_message(referrer_id, "🎉 **Congratulations!** 5 friends joined using your link.\n\n👑 **You are now a VIP for 7 Days!** You have NO WAITING TIME for videos! 🚀", parse_mode="Markdown")
+                                    except:
+                                        pass
+                                else:
+                                    users_col.update_one({"user_id": referrer_id}, {"$set": {"referrals": new_refs}})
+                                    try:
+                                        bot.send_message(referrer_id, f"🎉 Someone joined using your link! You now have **{new_refs}/5** referrals for VIP.", parse_mode="Markdown")
+                                    except:
+                                        pass
                 except Exception as e:
                     print(f"Database Save Error: {e}")
 
@@ -62,13 +95,14 @@ def setup(bot):
                 bot.reply_to(message, fsub_text, reply_markup=markup, parse_mode='HTML')
                 return
                 
-            # 3. Main Welcome Message (ഇവിടെയാണ് താഴെ വരുന്ന വലിയ ബട്ടണുകൾ സെറ്റ് ചെയ്തിരിക്കുന്നത്)
+            # 3. Main Welcome Message 
             success_text = (
                 f"⚡️ <b>Welcome to WETFLIX Ultimate Bot, {first_name}!</b> 🎉\n\n"
                 f"Your ultimate automated media destination. Here is what you can do with me:\n\n"
                 f"🖼 /image - Get high-quality random photos instantly.\n"
                 f"🔞 /video - Discover and download trending videos.\n"
-                f"🥵 /sticker - Access a massive collection of exclusive stickers.\n\n"
+                f"🥵 /sticker - Access a massive collection of exclusive stickers.\n"
+                f"🎁 /refer - Invite 5 friends and get NO TIME LIMIT access!\n\n"
                 f"💡 <i>Tip: Use the buttons below to explore features seamlessly!</i>"
             )
             
@@ -78,15 +112,38 @@ def setup(bot):
             btn2 = KeyboardButton("🔞 VIDEO")
             btn3 = KeyboardButton("💀 STICKER")
             btn4 = KeyboardButton("💅🏻 ANIME")
+            btn5 = KeyboardButton("🎁 REFER")
             
-            reply_markup.add(btn1, btn2, btn3, btn4)
+            reply_markup.add(btn1, btn2, btn3, btn4, btn5)
             
             bot.reply_to(message, success_text, reply_markup=reply_markup, parse_mode='HTML')
 
-        # എറർ ഉണ്ടെങ്കിൽ അത് ബോട്ടിൽ തന്നെ കാണിക്കാൻ
         except Exception as e:
             bot.reply_to(message, f"❌ An error occurred:\n`{e}`", parse_mode='Markdown')
             print(traceback.format_exc())
+
+    # റഫറൽ ലിങ്ക് ജനറേറ്റ് ചെയ്യാനുള്ള കമാൻഡ്
+    @bot.message_handler(commands=['refer'])
+    @bot.message_handler(func=lambda message: message.text == "🎁 REFER")
+    def refer_command(message):
+        try:
+            bot_info = bot.get_me()
+            user_id = message.from_user.id
+            ref_link = f"https://t.me/{bot_info.username}?start=REF_{user_id}"
+            
+            user_data = users_col.find_one({"user_id": user_id}) if users_col else None
+            current_refs = user_data.get("referrals", 0) if user_data else 0
+            
+            text = (
+                f"🎁 **Invite Friends & Get VIP Access!**\n\n"
+                f"Share your unique link with friends. If **5 people** join using your link, "
+                f"you will get **7 Days of VIP Access** (No waiting time for videos!).\n\n"
+                f"📊 **Your Progress:** {current_refs} / 5 Referrals\n\n"
+                f"🔗 **Your Invite Link:**\n`{ref_link}`"
+            )
+            bot.reply_to(message, text, parse_mode='Markdown')
+        except Exception as e:
+            bot.reply_to(message, "❌ Error generating invite link.")
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
     def check_sub(call):
