@@ -134,16 +134,20 @@ def setup(bot):
             user_data = users_col.find_one({"user_id": user_id}) if users_col else None
             current_refs = user_data.get("referrals", 0) if user_data else 0
             
+            # Markdown പ്രശ്നം ഒഴിവാക്കാൻ HTML ഉപയോഗിക്കുന്നു
             text = (
-                f"🎁 **Invite Friends & Get VIP Access!**\n\n"
-                f"Share your unique link with friends. If **5 people** join using your link, "
-                f"you will get **7 Days of VIP Access** (No waiting time for videos!).\n\n"
-                f"📊 **Your Progress:** {current_refs} / 5 Referrals\n\n"
-                f"🔗 **Your Invite Link:**\n`{ref_link}`"
+                f"🎁 <b>Invite Friends & Get VIP Access!</b>\n\n"
+                f"Share your unique link with friends. If <b>5 people</b> join using your link, "
+                f"you will get <b>7 Days of VIP Access</b> (No waiting time for videos!).\n\n"
+                f"📊 <b>Your Progress:</b> {current_refs} / 5 Referrals\n\n"
+                f"🔗 <b>Your Invite Link:</b>\n<code>{ref_link}</code>"
             )
-            bot.reply_to(message, text, parse_mode='Markdown')
+            bot.reply_to(message, text, parse_mode='HTML')
+            
         except Exception as e:
-            bot.reply_to(message, "❌ Error generating invite link.")
+            # എറർ എന്താണെന്ന് കൃത്യമായി കാണിക്കാൻ ഇത് സഹായിക്കും
+            bot.reply_to(message, f"❌ Error generating invite link: `{e}`", parse_mode='Markdown')
+            print(f"Referral Error: {e}")
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
     def check_sub(call):
