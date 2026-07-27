@@ -117,22 +117,28 @@ def setup(bot):
             else:
                 bot.reply_to(message, error_text)
                 
-        # എറർ വന്നാൽ അത് സൈലന്റ് ആവാതെ യൂസറെ അറിയിക്കാനുള്ള സിസ്റ്റം!
         except Exception as e:
             bot.reply_to(message, f"❌ Error loading media: `{e}`", parse_mode='Markdown')
             print(f"Media Fetch Error: {e}")
 
+    # --- പുതിയ ബട്ടണുകൾ വർക്ക് ആകാൻ ചേർത്ത മാറ്റങ്ങൾ ---
+    
     @bot.message_handler(commands=['sticker'])
+    @bot.message_handler(func=lambda message: message.text == "💀 STICKER")
     def cmd_sticker(message):
         process_media_request(message, stickers_col, bot.send_sticker, "No stickers available right now.")
 
     @bot.message_handler(commands=['video'])
+    @bot.message_handler(func=lambda message: message.text == "🔞 VIDEO")
     def cmd_video(message):
         process_media_request(message, videos_col, bot.send_video, "No videos available right now.")
 
     @bot.message_handler(commands=['image'])
+    @bot.message_handler(func=lambda message: message.text == "🍓 PHOTO")
     def cmd_image(message):
         process_media_request(message, images_col, bot.send_photo, "No photos available right now.")
+
+    # -----------------------------------------------------------
 
     # -----------------------------------------------------------
     # Auto-Save Media from Channels and Groups
@@ -150,7 +156,6 @@ def setup(bot):
                     print("✅ Photo saved to DB")
                     
             elif message.content_type == 'sticker':
-                # അക്ഷരത്തെറ്റ് (vfile_id) ഇവിടെ തിരുത്തിയിട്ടുണ്ട്!
                 if not stickers_col.find_one({"file_id": message.sticker.file_id}):
                     stickers_col.insert_one({"file_id": message.sticker.file_id})
                     print("✅ Sticker saved to DB")
