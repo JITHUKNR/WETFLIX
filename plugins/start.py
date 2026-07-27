@@ -77,7 +77,7 @@ def setup(bot):
             btn1 = KeyboardButton("🍓 PHOTO")
             btn2 = KeyboardButton("🔞 VIDEO")
             btn3 = KeyboardButton("💀 STICKER")
-            btn4 = keyboardButton("💅🏻 ANIME")
+            btn4 = KeyboardButton("💅🏻 ANIME")
             
             reply_markup.add(btn1, btn2, btn3)
             
