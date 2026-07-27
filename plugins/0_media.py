@@ -4,6 +4,12 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from database import users_col, stickers_col, videos_col, images_col, settings_col, get_fsub_data, is_user_requested
 from config import ADMIN_ID
 
+# -----------------------------------------------------------
+# പുതിയ ഡാറ്റാബേസ് ഉണ്ടാക്കാൻ ഇത് ചേർത്തു
+# -----------------------------------------------------------
+db = videos_col.database
+hntai_col = db['hntai_videos']
+
 user_cooldowns = {}
 
 # സുരക്ഷിതമായ ഡാറ്റാബേസ് ഫെച്ചിങ്
@@ -121,7 +127,7 @@ def setup(bot):
             bot.reply_to(message, f"❌ Error loading media: `{e}`", parse_mode='Markdown')
             print(f"Media Fetch Error: {e}")
 
-    # --- പുതിയ ബട്ടണുകൾ വർക്ക് ആകാൻ ചേർത്ത മാറ്റങ്ങൾ ---
+    # --- ബട്ടണുകൾ വർക്ക് ആകാൻ ചേർത്ത മാറ്റങ്ങൾ ---
     
     @bot.message_handler(commands=['sticker'])
     @bot.message_handler(func=lambda message: message.text == "💀 STICKER")
@@ -138,27 +144,38 @@ def setup(bot):
     def cmd_image(message):
         process_media_request(message, images_col, bot.send_photo, "No photos available right now.")
 
-    # -----------------------------------------------------------
+    # --- പുതിയ HNTAI ബട്ടൺ ഇവിടെ ചേർത്തു ---
+    @bot.message_handler(func=lambda message: message.text == "💅🏻 ANIME")
+    def cmd_hntai(message):
+        process_media_request(message, hntai_col, bot.send_video, "No exclusive videos available right now.")
 
     # -----------------------------------------------------------
-    # Auto-Save Media from Channels and Groups
+    # Auto-Save Media from Channels and Groups (മാറ്റം വരുത്തിയത്)
     # -----------------------------------------------------------
     def save_media_to_db(message):
         try:
-            if message.content_type == 'video':
-                if not videos_col.find_one({"file_id": message.video.file_id}):
-                    videos_col.insert_one({"file_id": message.video.file_id})
-                    print("✅ Video saved to DB")
-            
-            elif message.content_type == 'photo':
-                if not images_col.find_one({"file_id": message.photo[-1].file_id}):
-                    images_col.insert_one({"file_id": message.photo[-1].file_id})
-                    print("✅ Photo saved to DB")
-                    
-            elif message.content_type == 'sticker':
-                if not stickers_col.find_one({"file_id": message.sticker.file_id}):
-                    stickers_col.insert_one({"file_id": message.sticker.file_id})
-                    print("✅ Sticker saved to DB")
+            # പുതിയ ചാനൽ ആണെങ്കിൽ വേറെ ഡാറ്റാബേസിൽ സേവ് ആകും
+            if message.chat.id == -1003986796720:
+                if message.content_type == 'video':
+                    if not hntai_col.find_one({"file_id": message.video.file_id}):
+                        hntai_col.insert_one({"file_id": message.video.file_id})
+                        print("✅ Exclusive Video saved to HNTAI DB")
+            else:
+                # മറ്റ് ഗ്രൂപ്പുകളിൽ/ചാനലുകളിൽ നിന്നുള്ളവ സാധാരണ പോലെ സേവ് ആകും
+                if message.content_type == 'video':
+                    if not videos_col.find_one({"file_id": message.video.file_id}):
+                        videos_col.insert_one({"file_id": message.video.file_id})
+                        print("✅ Video saved to Normal DB")
+                
+                elif message.content_type == 'photo':
+                    if not images_col.find_one({"file_id": message.photo[-1].file_id}):
+                        images_col.insert_one({"file_id": message.photo[-1].file_id})
+                        print("✅ Photo saved to DB")
+                        
+                elif message.content_type == 'sticker':
+                    if not stickers_col.find_one({"file_id": message.sticker.file_id}):
+                        stickers_col.insert_one({"file_id": message.sticker.file_id})
+                        print("✅ Sticker saved to DB")
         except Exception as e:
             print(f"Error saving media: {e}")
 
