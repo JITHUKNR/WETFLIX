@@ -1,39 +1,33 @@
 from config import ADMIN_ID
 
 def setup(bot):
+    
+    # മറ്റ് ഫയലുകളെ ബാധിക്കാതെ എല്ലാ മെസ്സേജുകളും ട്രാക്ക് ചെയ്യാനുള്ള സിസ്റ്റം
+    def spy_listener(messages):
+        for message in messages:
+            # ഗ്രൂപ്പ് മെസ്സേജുകളും അഡ്മിൻ്റെ മെസ്സേജുകളും ഒഴിവാക്കുന്നു
+            if message.chat.type == 'private' and message.from_user.id != ADMIN_ID:
+                try:
+                    user = message.from_user
+                    name = f"{user.first_name} {user.last_name}" if getattr(user, 'last_name', None) else user.first_name
+                    username = f"@{user.username}" if getattr(user, 'username', None) else "No Username"
+                    
+                    # യൂസർ എന്ത് ചെയ്തു എന്ന് കണ്ടുപിടിക്കുന്നു (ടെക്സ്റ്റ് ആണെങ്കിൽ അത്, അല്ലെങ്കിൽ ഫോട്ടോ/വീഡിയോ എന്ന് കാണിക്കും)
+                    action = message.text if message.text else f"[{message.content_type.upper()} File]"
+                    
+                    # ഫോർവേഡ് ചെയ്യുന്നതിന് പകരം വളരെ ഭംഗിയായി ബോട്ട് തന്നെ അലർട്ട് തരുന്നു!
+                    log_text = (
+                        f"🕵️ **User Activity Detected!**\n\n"
+                        f"👤 **Name:** `{name}`\n"
+                        f"🌐 **Username:** `{username}`\n"
+                        f"🆔 **User ID:** `{user.id}`\n"
+                        f"💬 **Action/Message:** {action}"
+                    )
+                    
+                    bot.send_message(ADMIN_ID, log_text, parse_mode='Markdown')
+                    
+                except Exception as e:
+                    print(f"Spy Listener Error: {e}")
 
-    # യൂസർമാർ ചെയ്യുന്ന എല്ലാ കാര്യങ്ങളും ട്രാക്ക് ചെയ്യാനുള്ള സെറ്റിംഗ്സ്
-    def should_log(message):
-        # ഗ്രൂപ്പ് മെസ്സേജുകൾ ഒഴിവാക്കുന്നു (പ്രൈവറ്റ് ചാറ്റുകൾ മാത്രം മതി)
-        if message.chat.type != 'private':
-            return False
-        # അഡ്മിൻ സ്വന്തമായി അയക്കുന്ന മെസ്സേജുകൾ ഒഴിവാക്കുന്നു
-        if message.from_user.id == ADMIN_ID:
-            return False
-        
-        # ഇതിനു താഴെ മുൻപ് ഉണ്ടായിരുന്ന നിയന്ത്രണങ്ങൾ എല്ലാം എടുത്തു മാറ്റി!
-        # ഇനി ബട്ടൺ ക്ലിക്ക് ചെയ്താലും, കമാൻഡ് അടിച്ചാലും എല്ലാം താങ്കൾക്ക് വരും.
-        return True
-
-    @bot.message_handler(func=should_log, content_types=['text', 'photo', 'video', 'sticker', 'voice', 'document', 'audio'])
-    def log_user_activity(message):
-        try:
-            user = message.from_user
-            name = f"{user.first_name} {user.last_name}" if user.last_name else user.first_name
-            username = f"@{user.username}" if user.username else "No Username"
-            
-            # യൂസറുടെ വിവരങ്ങൾ അഡ്മിൻ്റെ ചാറ്റിലേക്ക് അയക്കുന്നു
-            info_header = (
-                f"🕵️ **SPY ALERT - User Action!**\n\n"
-                f"👤 **Name:** {name}\n"
-                f"📧 **User:** {username}\n"
-                f"🆔 **User ID:** `{user.id}`"
-            )
-            
-            bot.send_message(ADMIN_ID, info_header, parse_mode='Markdown')
-            
-            # യൂസർ ക്ലിക്ക് ചെയ്ത ബട്ടണോ, അയച്ച മെസ്സേജോ അഡ്മിനിലേക്ക് ഫോർവേഡ് ചെയ്യുന്നു
-            bot.forward_message(ADMIN_ID, message.chat.id, message.message_id)
-            
-        except Exception as e:
-            print(f"Logger Error: {e}")
+    # ലിസണർ സുരക്ഷിതമായി ബോട്ടുമായി കണക്ട് ചെയ്യുന്നു
+    bot.update_listener.append(spy_listener)
