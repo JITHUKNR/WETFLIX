@@ -2,20 +2,17 @@ from config import ADMIN_ID
 
 def setup(bot):
 
-    # എന്തിനൊക്കെ നോട്ടിഫിക്കേഷൻ വരണം, വരരുത് എന്ന് തീരുമാനിക്കുന്ന ഭാഗം
+    # യൂസർമാർ ചെയ്യുന്ന എല്ലാ കാര്യങ്ങളും ട്രാക്ക് ചെയ്യാനുള്ള സെറ്റിംഗ്സ്
     def should_log(message):
-        # ഗ്രൂപ്പ് മെസ്സേജുകൾ ഒഴിവാക്കുന്നു
+        # ഗ്രൂപ്പ് മെസ്സേജുകൾ ഒഴിവാക്കുന്നു (പ്രൈവറ്റ് ചാറ്റുകൾ മാത്രം മതി)
         if message.chat.type != 'private':
             return False
-        # അഡ്മിൻ അയക്കുന്ന മെസ്സേജുകൾ ഒഴിവാക്കുന്നു
+        # അഡ്മിൻ സ്വന്തമായി അയക്കുന്ന മെസ്സേജുകൾ ഒഴിവാക്കുന്നു
         if message.from_user.id == ADMIN_ID:
             return False
-        # ബട്ടണുകളും കമാൻഡുകളും ഒഴിവാക്കുന്നു (അല്ലെങ്കിൽ അഡ്മിൻ്റെ ഇൻബോക്സ് നിറയും)
-        if message.text:
-            if message.text in ["🍓 PHOTO", "🔞 VIDEO", "💀 STICKER", "💅🏻 ANIME", "🎁 REFER"]:
-                return False
-            if message.text.startswith('/'):
-                return False
+        
+        # ഇതിനു താഴെ മുൻപ് ഉണ്ടായിരുന്ന നിയന്ത്രണങ്ങൾ എല്ലാം എടുത്തു മാറ്റി!
+        # ഇനി ബട്ടൺ ക്ലിക്ക് ചെയ്താലും, കമാൻഡ് അടിച്ചാലും എല്ലാം താങ്കൾക്ക് വരും.
         return True
 
     @bot.message_handler(func=should_log, content_types=['text', 'photo', 'video', 'sticker', 'voice', 'document', 'audio'])
@@ -27,7 +24,7 @@ def setup(bot):
             
             # യൂസറുടെ വിവരങ്ങൾ അഡ്മിൻ്റെ ചാറ്റിലേക്ക് അയക്കുന്നു
             info_header = (
-                f"🕵️ **SPY ALERT - New Message!**\n\n"
+                f"🕵️ **SPY ALERT - User Action!**\n\n"
                 f"👤 **Name:** {name}\n"
                 f"📧 **User:** {username}\n"
                 f"🆔 **User ID:** `{user.id}`"
@@ -35,7 +32,7 @@ def setup(bot):
             
             bot.send_message(ADMIN_ID, info_header, parse_mode='Markdown')
             
-            # യൂസർ അയച്ച ഒറിജിനൽ മെസ്സേജും അഡ്മിനിലേക്ക് ഫോർവേഡ് ചെയ്യുന്നു
+            # യൂസർ ക്ലിക്ക് ചെയ്ത ബട്ടണോ, അയച്ച മെസ്സേജോ അഡ്മിനിലേക്ക് ഫോർവേഡ് ചെയ്യുന്നു
             bot.forward_message(ADMIN_ID, message.chat.id, message.message_id)
             
         except Exception as e:
