@@ -5,38 +5,29 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # XHamster Direct Search & Download Command (/search or /dm or /dl)
-    @bot.message_handler(commands=['search', 'dm', 'dl'])
-    def search_and_download(message):
+    # Automatic Google Search & Video Downloader Command
+    @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
+    def auto_google_downloader(message):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "📥 **XHamster Video Downloader:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search mallu mms`", 
+                    "🔍 **Auto Video Search & Downloader:**\n\n📖 *Usage:*\n`/search <Any Video Name>`\n\n💡 *Example:* `/search mallu comedy`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
-            
-            # യൂസർ ലിങ്ക് ആണോ അതോ കീവേഡ് ആണോ എന്ന് നോക്കുന്നു
-            if query.startswith("http"):
-                video_url = query
-            else:
-                # യൂട്യൂബ് ഒഴിവാക്കി, നേരിട്ട് xhamster സെർച്ച് ലിങ്ക് നൽകുന്നു
-                import urllib.parse
-                encoded_query = urllib.parse.quote(query)
-                video_url = f"https://xhamster.com/search/{encoded_query}"
+            status_msg = bot.reply_to(message, f"🔎 Searching Google for **'{query}'** and downloading...", parse_mode='Markdown')
 
-            status_msg = bot.reply_to(message, f"⏳ **Downloading video from XHamster... Please wait.**", parse_mode='Markdown')
-
-            def run_dl():
+            def run_download():
                 filename = f"vid_{message.chat.id}.mp4"
                 
-                # yt-dlp ഓപ്ഷൻസ് (യൂട്യൂബ് ഒഴിവാക്കി മറ്റ് സൈറ്റുകൾ മാത്രം എടുക്കാൻ)
+                # yt-dlp ഓട്ടോമാറ്റിക് സെർച്ച് വഴി ഗൂഗിളിൽ നിന്ന്/വെബിൽ നിന്ന് ആദ്യത്തെ വീഡിയോ എടുക്കുന്നു
                 ydl_opts = {
-                    'format': 'best[height<=360][filesize<48M]/worst',
+                    'format': 'best[height<=360][filesize<48M]/best[height<=480][filesize<48M]/worst',
+                    'default_search': 'ytsearch1',  # വെബിൽ നിന്ന് നേരിട്ട് സെർച്ച് ചെയ്യാൻ
                     'outtmpl': filename,
                     'quiet': True,
                     'no_warnings': True,
@@ -44,12 +35,12 @@ def setup(bot):
 
                 try:
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(video_url, download=True)
+                        info = ydl.extract_info(query, download=True)
                         if 'entries' in info:
-                            # പ്ലേലിസ്റ്റ് അല്ലെങ്കിൽ സെർച്ച് പേജ് ആണെങ്കിൽ ആദ്യത്തെ വീഡിയോ എടുക്കുന്നു
                             info = info['entries'][0]
-                        title = info.get('title', 'XHamster Video')
+                        title = info.get('title', 'Downloaded Video')
 
+                    # ടെലഗ്രാമിലേക്ക് നേരിട്ട് വീഡിയോ ഫയലായി അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             message.chat.id, 
@@ -68,7 +59,7 @@ def setup(bot):
                     if os.path.exists(filename):
                         os.remove(filename)
 
-            threading.Thread(target=run_dl).start()
+            threading.Thread(target=run_download).start()
 
         except Exception as e:
             bot.reply_to(message, f"❌ Error: `{e}`")
