@@ -1,57 +1,49 @@
 import os
-import re
-import urllib.parse
 import threading
-import requests
 import yt_dlp
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Universal 18+ Adult Video Search & Downloader
+    # Global 18+ Video Search & Downloader
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
-    def adult_video_downloader(message):
+    def global_adult_downloader(message):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔥 **18+ Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search mallu bhabhi`", 
+                    "🔥 **18+ Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search hot mallu`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
-            status_msg = bot.reply_to(message, f"🔎 Searching adult web for **'{query}'**...", parse_mode='Markdown')
+            status_msg = bot.reply_to(message, f"🔎 Searching Global 18+ Network for **'{query}'**...", parse_mode='Markdown')
 
             def run_process():
                 filename = f"vid_{message.chat.id}.mp4"
                 try:
-                    # yt-dlp ഓട്ടോമാറ്റിക് സെർച്ച് ഉപയോഗിച്ച് വെബിൽ നിന്ന് 18+ വീഡിയോ തപ്പുന്നു
+                    # Google SafeSearch ഒഴിവാക്കി, നേരിട്ട് ഏറ്റവും വലിയ 18+ ഡാറ്റാബേസിൽ (Pornhub) സെർച്ച് ചെയ്യുന്നു
+                    search_query = f"phsearch1:{query}"
+
                     ydl_opts = {
-                        'format': 'best[filesize<49.5M]/bestvideo[filesize<40M]+bestaudio/worst',
-                        'default_search': 'auto',
-                        'noplaylist': True,
+                        'format': 'best[height<=480][filesize<49.5M]/best[height<=360][filesize<49.5M]/worst',
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
-                        'extractor_args': {'generic': {'impersonate': True}}
+                        'age_limit': 18  # 18+ ഫിൽറ്റർ ബൈപ്പാസ് ചെയ്യാൻ
                     }
-
-                    # സെർച്ച് ക്വറിയിൽ അഡൾട്ട് കീവേഡ് ഉറപ്പുവരുത്തുന്നു
-                    search_query = f"gvsearch1:hot adult 18+ {query}"
-
-                    bot.edit_message_text(f"⏳ **Found matching 18+ video! Downloading...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(search_query, download=True)
                         if 'entries' in info:
                             if not info['entries']:
-                                raise Exception("No adult videos found. Try a different keyword.")
+                                raise Exception("No 18+ videos found for this exact keyword. Try another word.")
                             info = info['entries'][0]
                         title = info.get('title', '18+ Adult Video')
 
-                    # ഫയൽ സൈസ് 50MB പരിധിക്കുള്ളിലാണോ എന്ന് ഉറപ്പുവരുത്തുന്നു
+                    # 50MB പരിധി ഉറപ്പുവരുത്തുന്നു
                     if os.path.exists(filename):
                         file_size_mb = os.path.getsize(filename) / (1024 * 1024)
                         if file_size_mb > 49.9:
