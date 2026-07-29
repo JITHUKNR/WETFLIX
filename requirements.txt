@@ -7,3 +7,4 @@ qrcode
 Pillow
 requests
 yt-dlp
+curl-cffi
