@@ -148,6 +148,7 @@ def setup(bot):
             bot.reply_to(message, f"❌ Error generating invite link: `{e}`", parse_mode='Markdown')
             print(f"Referral Error: {e}")
 
+    # ⚠️ ഇവിടെയാണ് ബട്ടൺ നേരിട്ട് വരാൻ മാറ്റം വരുത്തിയത് ⚠️
     @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
     def check_sub(call):
         try:
@@ -163,11 +164,28 @@ def setup(bot):
                 bot.answer_callback_query(call.id, "✅ Verification successful!", show_alert=True)
                 bot.delete_message(call.message.chat.id, call.message.message_id)
                 
+                # വീണ്ടും /start അടിക്കാൻ പറയുന്നതിന് പകരം യൂസർക്ക് നേരിട്ട് വെൽക്കം മെസ്സേജും കീബോർഡും നൽകുന്നു
+                first_name = call.from_user.first_name
                 success_text = (
-                    f"✅ <b>Verification Complete!</b>\n"
-                    f"You can now fully use the bot. Type /start to begin."
+                    f"⚡️ <b>Welcome to WETFLIX Ultimate Bot, {first_name}!</b> 🎉\n\n"
+                    f"Your ultimate automated media destination. Here is what you can do with me:\n\n"
+                    f"🖼 /image - Get high-quality random photos instantly.\n"
+                    f"🔞 /video - Discover and download trending videos.\n"
+                    f"🥵 /sticker - Access a massive collection of exclusive stickers.\n"
+                    f"🎁 /refer - Invite 5 friends and get NO TIME LIMIT access!\n\n"
+                    f"💡 <i>Tip: Use the buttons below to explore features seamlessly!</i>"
                 )
-                bot.send_message(call.message.chat.id, success_text, parse_mode='HTML')
+                
+                reply_markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+                btn1 = KeyboardButton("🍓 PHOTO")
+                btn2 = KeyboardButton("🔞 VIDEO")
+                btn3 = KeyboardButton("💀 STICKER")
+                btn4 = KeyboardButton("💅🏻 ANIME")
+                btn5 = KeyboardButton("🎁 REFER")
+                
+                reply_markup.add(btn1, btn2, btn3, btn4, btn5)
+                
+                bot.send_message(call.message.chat.id, success_text, reply_markup=reply_markup, parse_mode='HTML')
             else:
                 bot.answer_callback_query(call.id, "❌ Please join all required channels first!", show_alert=True)
         except Exception as e:
