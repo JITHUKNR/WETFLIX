@@ -5,11 +5,20 @@ import threading
 import requests
 import yt_dlp
 import random
+import asyncio
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client
 
 def setup(bot):
 
-    # 18+ High Quality Video Downloader (Stable Version)
+    # Render Environment-ൽ നിന്നും API വിവരങ്ങൾ എടുക്കുന്നു
+    API_ID = int(os.environ.get("API_ID", 0)) 
+    API_HASH = os.environ.get("API_HASH", "")
+    BOT_TOKEN = bot.token
+
+    if not API_ID or not API_HASH:
+        print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
+
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
     def ultimate_hd_search(message):
         try:
@@ -33,7 +42,7 @@ def setup(bot):
                     encoded_query = urllib.parse.quote(query)
                     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-                    # --- Source 1: XVideos ---
+                    # --- Source 1: XVideos Search ---
                     try:
                         resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=10)
                         if resp.status_code == 200:
@@ -43,7 +52,7 @@ def setup(bot):
                     except:
                         pass
 
-                    # --- Source 2: XNXX ---
+                    # --- Source 2: XNXX Search ---
                     if not video_url:
                         try:
                             resp = requests.get(f"https://www.xnxx.com/search/{encoded_query}", headers=headers, timeout=10)
@@ -54,7 +63,7 @@ def setup(bot):
                         except:
                             pass
                             
-                    # --- Source 3: XHamster ---
+                    # --- Source 3: XHamster Search ---
                     if not video_url:
                         try:
                             resp = requests.get(f"https://xhamster.com/search/{encoded_query}?sort=best", headers=headers, timeout=10)
@@ -67,14 +76,14 @@ def setup(bot):
                             pass
 
                     if not video_url:
-                        bot.edit_message_text(f"❌ No videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                        bot.edit_message_text(f"❌ No suitable videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                         return
 
-                    bot.edit_message_text(f"⏳ **Video found! Downloading Best Available Quality (Max 50MB Limit)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"⏳ **Video found! Downloading Best Quality...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                    # 50MB ക്ക് താഴെ കിട്ടാവുന്ന ഏറ്റവും മികച്ച ക്വാളിറ്റി (720p/480p) എടുക്കാൻ നിർദ്ദേശം കൊടുക്കുന്നു
+                    # ⚠️ 50MB ലിമിറ്റും ഫോർമാറ്റ് ലിമിറ്റും എടുത്തു കളഞ്ഞു ⚠️
                     ydl_opts = {
-                        'format': 'best[ext=mp4][height<=720][filesize<49.5M]/best[ext=mp4][height<=480][filesize<49.5M]/best[ext=mp4][filesize<49.5M]',
+                        'format': 'best', # കിട്ടാവുന്നതിൽ ഏറ്റവും നല്ലത് എടുക്കും
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
@@ -88,28 +97,33 @@ def setup(bot):
                         width = info.get('width', 0)
                         height = info.get('height', 0)
 
-                    bot.edit_message_text(f"📤 **Uploading {title[:30]}...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                    # വീഡിയോ ടെലഗ്രാമിലേക്ക് സ്ട്രീമിങ് സപ്പോർട്ടോടെ അയക്കുന്നു
-                    with open(filename, 'rb') as video_file:
-                        bot.send_video(
-                            message.chat.id, 
-                            video_file, 
-                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_", 
-                            parse_mode='Markdown',
-                            supports_streaming=True,
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            timeout=120
-                        )
+                    # ⚠️ Pyrogram വഴി അപ്‌ലോഡ് ചെയ്യുന്നു (No 50MB Limit) ⚠️
+                    async def upload_with_pyrogram():
+                        async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
+                            await app.send_video(
+                                chat_id=message.chat.id,
+                                video=filename,
+                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot (HD)_",
+                                duration=duration,
+                                width=width,
+                                height=height,
+                                supports_streaming=True
+                            )
+
+                    # പുതിയ ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കി ഫയൽ സുരക്ഷിതമായി അപ്‌ലോഡ് ചെയ്യുന്നു
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(upload_with_pyrogram())
+                    loop.close()
 
                     bot.delete_message(message.chat.id, status_msg.message_id)
 
                 except Exception as err:
                     error_str = str(err)[:150]
                     try:
-                        bot.edit_message_text(f"❌ **Download Failed! (Video might be larger than 50MB)**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                        bot.edit_message_text(f"❌ **Download Failed!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                     except:
                         bot.send_message(message.chat.id, f"❌ **Download Failed!**\n\n`{error_str}`")
                 finally:
