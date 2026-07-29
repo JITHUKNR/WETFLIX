@@ -6,25 +6,25 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Video Search Command (/search or /dm)
+    # XHamster Video Search Command (/search or /dm)
     @bot.message_handler(commands=['search', 'dm'])
-    def search_videos(message):
+    def search_xhamster(message):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔍 **Video Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search mallu`", 
+                    "🔍 **XHamster Video Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search mallu hot`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
-            status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
+            status_msg = bot.reply_to(message, f"🔎 Searching XHamster for **'{query}'**...", parse_mode='Markdown')
 
-            # Redgifs / Free API വഴി സെർച്ച് ചെയ്യുന്നു (എല്ലാ വീഡിയോസും കിട്ടും)
-            url = f"https://api.redgifs.com/v2/search/gifs?search_text={query}&count=10"
-            headers = {"User-Agent": "Mozilla/5.0"}
+            # XHamster Public API വഴി സെർച്ച് ചെയ്യുന്നു
+            url = f"https://xhamster.com/api/v4/search/videos?q={query}&p=1"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code != 200:
@@ -32,34 +32,25 @@ def setup(bot):
                 return
                 
             data = response.json()
-            gifs = data.get("gifs", [])
+            videos = data.get("videos", [])
             
-            if not gifs:
+            if not videos:
                 bot.edit_message_text(f"❌ No videos found for '{query}'.", message.chat.id, status_msg.message_id)
                 return
 
             markup = InlineKeyboardMarkup(row_width=1)
-            for idx, item in enumerate(gifs):
-                title = item.get('title', f'Video {idx+1}')
-                if not title or title.strip() == "":
-                    title = f"Exclusive Video {idx+1}"
-                title = title[:35]
+            for item in videos[:10]: # ആദ്യത്തെ 10 വീഡിയോകൾ എടുക്കുന്നു
+                video_id = str(item.get('id'))
+                title = item.get('title', 'Video')[:35]
+                duration = item.get('duration', 0)
+                mins = duration // 60
+                secs = duration % 60
+                time_str = f"{mins}:{secs:02d}"
                 
-                # വീഡിയോയുടെ ഡൗൺലോഡ് ലിങ്ക് സേവ് ചെയ്യുന്നു
-                urls = item.get('urls', {})
-                hd_url = urls.get('hd') or urls.get('sd')
-                
-                if hd_url:
-                    # കോൾബാക്ക് ഡാറ്റ വലുതാകാതിരിക്കാൻ ഷോർട്ട് ഐഡി നൽകുന്നു
-                    markup.add(InlineKeyboardButton(f"🔞 {title}", callback_data=f"dl_rg_{idx}"))
-
-            # താൽക്കാലികമായി ലിങ്ക് സേവ് ചെയ്യാൻ ഗ്ലോബൽ ഡിക്ഷണറി ഉപയോഗിക്കുന്നു
-            if not hasattr(bot, 'search_cache'):
-                bot.search_cache = {}
-            bot.search_cache[message.from_user.id] = gifs
+                markup.add(InlineKeyboardButton(f"🔞 {title}... ({time_str})", callback_data=f"dl_xh_{video_id}"))
 
             bot.edit_message_text(
-                f"🔥 **Search Results for:** `{query}`\n\n👇 *Select a video to download:*", 
+                f"🔥 **XHamster Search Results for:** `{query}`\n\n👇 *Select a video to download:*", 
                 message.chat.id, 
                 status_msg.message_id, 
                 reply_markup=markup, 
@@ -70,44 +61,30 @@ def setup(bot):
             bot.reply_to(message, f"❌ Search Error: `{e}`")
 
     # Download Handler (ഡൗൺലോഡ് ചെയ്ത് ഫയലായി അയക്കുന്നു)
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_rg_"))
-    def download_video_file(call):
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_xh_"))
+    def download_xhamster_video(call):
         try:
-            idx = int(call.data.replace("dl_rg_", ""))
-            user_id = call.from_user.id
+            video_id = call.data.replace("dl_xh_", "")
+            video_url = f"https://xhamster.com/videos/{video_id}"
             
-            if not hasattr(bot, 'search_cache') or user_id not in bot.search_cache:
-                bot.answer_callback_query(call.id, "❌ Session expired. Please search again.", show_alert=True)
-                return
-
-            gifs = bot.search_cache[user_id]
-            if idx >= len(gifs):
-                bot.answer_callback_query(call.id, "❌ Invalid selection.", show_alert=True)
-                return
-
-            item = gifs[idx]
-            urls = item.get('urls', {})
-            video_url = urls.get('hd') or urls.get('sd')
-            title = item.get('title', 'Video')
-
             bot.answer_callback_query(call.id, "⬇️ Downloading video...", show_alert=False)
-            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading video file... Please wait.**", parse_mode='Markdown')
+            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading video from XHamster... Please wait.**", parse_mode='Markdown')
 
             def run_download():
-                filename = f"video_{user_id}.mp4"
-                try:
-                    # വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു
-                    vid_data = requests.get(video_url, stream=True, timeout=30)
-                    with open(filename, 'wb') as f:
-                        for chunk in vid_data.iter_content(chunk_size=1024):
-                            if chunk:
-                                f.write(chunk)
+                filename = f"xh_{video_id}.mp4"
+                
+                # ടെലഗ്രാം 50MB ലിമിറ്റ് പാലിക്കാൻ ലോ ക്വാളിറ്റി/മീഡിയം ക്വാളിറ്റി ഫോർമാറ്റ് സെറ്റ് ചെയ്യുന്നു
+                ydl_opts = {
+                    'format': 'best[height<=360][filesize<48M]/best[height<=480][filesize<48M]/worst',
+                    'outtmpl': filename,
+                    'quiet': True,
+                    'no_warnings': True,
+                }
 
-                    # ഫയൽ സൈസ് പരിശോധിക്കുന്നു (50MB മുകളിലാണോ എന്ന് നോക്കാൻ)
-                    file_size = os.path.getsize(filename) / (1024 * 1024)
-                    if file_size > 48:
-                        bot.edit_message_text("❌ **File is larger than 50MB limit.** Please try a smaller video.", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                        return
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(video_url, download=True)
+                        title = info.get('title', 'XHamster Video')
 
                     # ടെലഗ്രാമിലേക്ക് നേരിട്ട് വീഡിയോ ഫയലായി അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
@@ -122,7 +99,8 @@ def setup(bot):
                     bot.delete_message(call.message.chat.id, status_msg.message_id)
 
                 except Exception as err:
-                    bot.edit_message_text(f"❌ **Download Failed:** `{err}`", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    error_str = str(err)[:150]
+                    bot.edit_message_text(f"❌ **Download Failed! (File might be larger than 50MB)**\n\n`{error_str}`", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 finally:
                     if os.path.exists(filename):
                         os.remove(filename)
