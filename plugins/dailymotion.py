@@ -6,7 +6,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Dailymotion Search Command (/search അല്ലെങ്കിൽ /dm)
+    # Dailymotion Search Command (/search or /dm)
     @bot.message_handler(commands=['search', 'dm'])
     def search_dailymotion(message):
         try:
@@ -14,28 +14,28 @@ def setup(bot):
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔍 **Dailymotion Search:**\n\nഉപയോഗിക്കേണ്ട വിധം:\n`/search <വീഡിയോയുടെ പേര്>`\n\nഉദാഹരണത്തിന്: `/search funny cats`", 
+                    "🔍 **Dailymotion Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search funny cats`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
-            status_msg = bot.reply_to(message, f"🔎 Dailymotion-ൽ **'{query}'** സെർച്ച് ചെയ്യുന്നു...", parse_mode='Markdown')
+            status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
 
-            # Dailymotion API വഴി സെർച്ച് ചെയ്യുന്നു
+            # Search via Dailymotion API
             url = f"https://api.dailymotion.com/videos?fields=id,title,duration&search={query}&limit=5"
             response = requests.get(url, timeout=10)
             data = response.json()
 
             videos = data.get("list", [])
             if not videos:
-                bot.edit_message_text("❌ ഈ പേരിൽ Dailymotion-ൽ വീഡിയോകൾ ഒന്നും കണ്ടില്ല.", message.chat.id, status_msg.message_id)
+                bot.edit_message_text(f"❌ No videos found for '{query}'.", message.chat.id, status_msg.message_id)
                 return
 
             markup = InlineKeyboardMarkup(row_width=1)
             for item in videos:
                 video_id = item['id']
-                title = item['title'][:35]  # ബട്ടണിൽ ഒതുങ്ങാൻ ടൈറ്റിൽ ചെറുതാക്കുന്നു
+                title = item['title'][:35]  # Limit title length for buttons
                 duration = item.get('duration', 0)
                 mins = duration // 60
                 secs = duration % 60
@@ -45,7 +45,7 @@ def setup(bot):
                 markup.add(InlineKeyboardButton(button_text, callback_data=f"dl_dm_{video_id}"))
 
             bot.edit_message_text(
-                f"🔍 **Dailymotion Search Results:** `{query}`\n\nഡൗൺലോഡ് ചെയ്യേണ്ട വീഡിയോ താഴെ നിന്ന് തിരഞ്ഞെടുക്കൂ 👇", 
+                f"🔍 **Search Results for:** `{query}`\n\n👇 *Select a video to download:*", 
                 message.chat.id, 
                 status_msg.message_id, 
                 reply_markup=markup, 
@@ -55,7 +55,7 @@ def setup(bot):
         except Exception as e:
             bot.reply_to(message, f"❌ Search Error: `{e}`")
 
-    # ബട്ടൺ ക്ലിക്ക് ചെയ്യുമ്പോൾ വീഡിയോ ഡൗൺലോഡ് ചെയ്ത് അയക്കുന്ന ഫംഗ്ഷൻ
+    # Download Handler
     @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_dm_"))
     def download_dailymotion_video(call):
         try:
@@ -63,10 +63,12 @@ def setup(bot):
             video_url = f"https://www.dailymotion.com/video/{video_id}"
             
             bot.answer_callback_query(call.id, "⬇️ Downloading video...", show_alert=False)
-            status_msg = bot.send_message(call.message.chat.id, "⏳ **Dailymotion-ൽ നിന്ന് വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു...**\nദയവായി കുറച്ചു സെക്കൻഡ് കാത്തിരിക്കൂ.")
+            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading video...**\n*Please wait a few seconds.*", parse_mode='Markdown')
 
             def run_download():
                 filename = f"dm_{video_id}.mp4"
+                
+                # yt-dlp configurations to bypass limits
                 ydl_opts = {
                     'format': 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                     'outtmpl': filename,
@@ -83,15 +85,16 @@ def setup(bot):
                         bot.send_video(
                             call.message.chat.id, 
                             video_file, 
-                            caption=f"🎥 **{title}**\n\n📥 Downloaded from Dailymotion via WETFLIX Bot", 
+                            caption=f"🎥 **{title}**\n\n📥 _Downloaded via WETFLIX_", 
                             parse_mode='Markdown'
                         )
 
                     bot.delete_message(call.message.chat.id, status_msg.message_id)
 
                 except Exception as err:
-                    bot.edit_message_text(f"❌ Video Download Failed: `{err}`", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed!**\n`{err}`", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 finally:
+                    # Clean up the file after sending
                     if os.path.exists(filename):
                         os.remove(filename)
 
