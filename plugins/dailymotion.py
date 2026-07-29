@@ -8,74 +8,64 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Automatic Keyword Search & Video Downloader
+    # Universal 18+ Adult Video Search & Downloader
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
-    def search_and_download(message):
+    def adult_video_downloader(message):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔍 **Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search mallu girl`", 
+                    "🔥 **18+ Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search mallu bhabhi`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
-            status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
+            status_msg = bot.reply_to(message, f"🔎 Searching adult web for **'{query}'**...", parse_mode='Markdown')
 
             def run_process():
                 filename = f"vid_{message.chat.id}.mp4"
                 try:
-                    # Step 1: XHamster-ൽ കീവേഡ് സെർച്ച് ചെയ്ത് ആദ്യത്തെ വീഡിയോ ലിങ്ക് എടുക്കുന്നു
-                    encoded_query = urllib.parse.quote(query)
-                    search_url = f"https://xhamster.com/search/{encoded_query}"
-                    
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    }
-                    
-                    resp = requests.get(search_url, headers=headers, timeout=15)
-                    if resp.status_code != 200:
-                        bot.edit_message_text(f"❌ Search failed. Status: {resp.status_code}", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                        return
-
-                    # HTML-ൽ നിന്ന് വീഡിയോ ലിങ്കുകൾ regex വഴി കണ്ടെത്തുന്നു
-                    links = re.findall(r'href="(https://xhamster\.com/videos/[^"]+)"', resp.text)
-                    
-                    video_url = None
-                    for link in links:
-                        if '/videos/' in link and 'user' not in link and 'channels' not in link:
-                            video_url = link
-                            break
-
-                    if not video_url:
-                        bot.edit_message_text(f"❌ No videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                        return
-
-                    bot.edit_message_text(f"⏳ **Video found! Downloading... Please wait.**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-
-                    # Step 2: yt-dlp ഉപയോഗിച്ച് വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു (50MB ലിമിറ്റിനുള്ളിൽ)
+                    # yt-dlp ഓട്ടോമാറ്റിക് സെർച്ച് ഉപയോഗിച്ച് വെബിൽ നിന്ന് 18+ വീഡിയോ തപ്പുന്നു
                     ydl_opts = {
-                        'format': 'best[height<=360][filesize<48M]/best[height<=480][filesize<48M]/worst',
+                        'format': 'best[filesize<49.5M]/bestvideo[filesize<40M]+bestaudio/worst',
+                        'default_search': 'auto',
+                        'noplaylist': True,
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
-                        'headers': headers
+                        'extractor_args': {'generic': {'impersonate': True}}
                     }
 
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(video_url, download=True)
-                        title = info.get('title', 'XHamster Video')
+                    # സെർച്ച് ക്വറിയിൽ അഡൾട്ട് കീവേഡ് ഉറപ്പുവരുത്തുന്നു
+                    search_query = f"gvsearch1:hot adult 18+ {query}"
 
-                    # Step 3: ടെലഗ്രാമിലേക്ക് നേരിട്ട് വീഡിയോ ഫയലായി അയക്കുന്നു
+                    bot.edit_message_text(f"⏳ **Found matching 18+ video! Downloading...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(search_query, download=True)
+                        if 'entries' in info:
+                            if not info['entries']:
+                                raise Exception("No adult videos found. Try a different keyword.")
+                            info = info['entries'][0]
+                        title = info.get('title', '18+ Adult Video')
+
+                    # ഫയൽ സൈസ് 50MB പരിധിക്കുള്ളിലാണോ എന്ന് ഉറപ്പുവരുത്തുന്നു
+                    if os.path.exists(filename):
+                        file_size_mb = os.path.getsize(filename) / (1024 * 1024)
+                        if file_size_mb > 49.9:
+                            bot.edit_message_text(f"❌ **File is too large ({file_size_mb:.1f} MB)!** Telegram limit is 50MB.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                            return
+
+                    # ടെലഗ്രാമിലേക്ക് നേരിട്ട് വീഡിയോ ഫയലായി അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             message.chat.id, 
                             video_file, 
-                            caption=f"🔥 **{title}**\n\n📥 _Downloaded via WETFLIX Bot_", 
+                            caption=f"🔞 **{title}**\n\n📥 _Downloaded via WETFLIX Bot_", 
                             parse_mode='Markdown',
-                            timeout=120
+                            timeout=180
                         )
 
                     bot.delete_message(message.chat.id, status_msg.message_id)
