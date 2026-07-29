@@ -6,15 +6,15 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Dailymotion Search Command (/search or /dm)
+    # Premium Video Search Command (/search or /dm)
     @bot.message_handler(commands=['search', 'dm'])
-    def search_dailymotion(message):
+    def search_videos(message):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔍 **Dailymotion Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search funny cats`", 
+                    "🔍 **Premium Video Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search hot mallu`", 
                     parse_mode='Markdown'
                 )
                 return
@@ -22,30 +22,35 @@ def setup(bot):
             query = parts[1].strip()
             status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
 
-            # ⚠️ ഇവിടെയാണ് മാറ്റം വരുത്തിയത്: family_filter=0 എന്ന് ചേർത്തു, limit=10 ആക്കി
-            url = f"https://api.dailymotion.com/videos?fields=id,title,duration&search={query}&limit=10&family_filter=0"
+            # Unrestricted 18+ API Search 
+            url = f"https://www.eporner.com/api/v2/video/search/?query={query}&per_page=10"
             response = requests.get(url, timeout=10)
+            
+            if response.status_code != 200:
+                bot.edit_message_text("❌ API Error. Please try again later.", message.chat.id, status_msg.message_id)
+                return
+                
             data = response.json()
-
-            videos = data.get("list", [])
+            videos = data.get("videos", [])
+            
             if not videos:
-                bot.edit_message_text(f"❌ No videos found for '{query}'.", message.chat.id, status_msg.message_id)
+                bot.edit_message_text(f"❌ No videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id)
                 return
 
             markup = InlineKeyboardMarkup(row_width=1)
             for item in videos:
                 video_id = item['id']
                 title = item['title'][:35]  # ബട്ടണിൽ ഒതുങ്ങാൻ ടൈറ്റിൽ ചെറുതാക്കുന്നു
-                duration = item.get('duration', 0)
+                duration = item.get('length_sec', 0)
                 mins = duration // 60
                 secs = duration % 60
                 time_str = f"{mins}:{secs:02d}"
                 
-                button_text = f"🎬 {title}... ({time_str})"
-                markup.add(InlineKeyboardButton(button_text, callback_data=f"dl_dm_{video_id}"))
+                button_text = f"🔞 {title}... ({time_str})"
+                markup.add(InlineKeyboardButton(button_text, callback_data=f"dl_ep_{video_id}"))
 
             bot.edit_message_text(
-                f"🔍 **Search Results for:** `{query}`\n\n👇 *Select a video to download:*", 
+                f"🔥 **Premium Search Results:** `{query}`\n\n👇 *Select a video to download:*", 
                 message.chat.id, 
                 status_msg.message_id, 
                 reply_markup=markup, 
@@ -56,45 +61,52 @@ def setup(bot):
             bot.reply_to(message, f"❌ Search Error: `{e}`")
 
     # Download Handler
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_dm_"))
-    def download_dailymotion_video(call):
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_ep_"))
+    def download_premium_video(call):
         try:
-            video_id = call.data.replace("dl_dm_", "")
-            video_url = f"https://www.dailymotion.com/video/{video_id}"
+            video_id = call.data.replace("dl_ep_", "")
             
-            bot.answer_callback_query(call.id, "⬇️ Downloading video...", show_alert=False)
-            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading video...**\n*Please wait a few seconds.*", parse_mode='Markdown')
+            bot.answer_callback_query(call.id, "⬇️ Preparing video...", show_alert=False)
+            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading Premium Video...**\n*This might take a minute based on size.*", parse_mode='Markdown')
 
             def run_download():
-                filename = f"dm_{video_id}.mp4"
+                filename = f"vid_{video_id}.mp4"
                 
-                # yt-dlp configurations to bypass limits
-                ydl_opts = {
-                    'format': 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                    'outtmpl': filename,
-                    'quiet': True,
-                    'no_warnings': True,
-                }
-
                 try:
+                    # ഫുൾ വീഡിയോ ലിങ്ക് എടുക്കുന്നു
+                    api_url = f"https://www.eporner.com/api/v2/video/id/?id={video_id}"
+                    res = requests.get(api_url, timeout=10).json()
+                    video_url = res.get('url')
+                    title = res.get('title', 'Premium Video')
+
+                    if not video_url:
+                        raise Exception("Could not fetch video link.")
+
+                    # Telegram-ൽ 50MB ക്ക് മുകളിലുള്ള ഫയലുകൾ അയക്കാൻ പറ്റാത്തത് കൊണ്ട് സൈസ് കുറഞ്ഞ ഫോർമാറ്റ് എടുക്കുന്നു
+                    ydl_opts = {
+                        'format': 'best[filesize<49M]/best[height<=480]/best[height<=360]/best',
+                        'outtmpl': filename,
+                        'quiet': True,
+                        'no_warnings': True,
+                    }
+
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(video_url, download=True)
-                        title = info.get('title', 'Dailymotion Video')
+                        ydl.download([video_url])
 
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             call.message.chat.id, 
                             video_file, 
-                            caption=f"🎥 **{title}**\n\n📥 _Downloaded via WETFLIX_", 
+                            caption=f"🔥 **{title}**\n\n📥 _Downloaded via WETFLIX Bot_", 
                             parse_mode='Markdown'
                         )
 
                     bot.delete_message(call.message.chat.id, status_msg.message_id)
 
                 except Exception as err:
-                    bot.edit_message_text(f"❌ **Download Failed!**\n`{err}`", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed! (File might be larger than 50MB)**", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 finally:
-                    # Clean up the file after sending
+                    # ഫയൽ അയച്ചു കഴിഞ്ഞാൽ ഡിലീറ്റ് ചെയ്യുന്നു (സെർവർ ഫുൾ ആകാതിരിക്കാൻ)
                     if os.path.exists(filename):
                         os.remove(filename)
 
