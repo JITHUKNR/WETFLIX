@@ -8,3 +8,5 @@ Pillow
 requests
 yt-dlp
 curl-cffi
+pyrogram
+tgcrypto
