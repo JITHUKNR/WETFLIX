@@ -22,8 +22,8 @@ def setup(bot):
             query = parts[1].strip()
             status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
 
-            # Search via Dailymotion API
-            url = f"https://api.dailymotion.com/videos?fields=id,title,duration&search={query}&limit=5"
+            # ⚠️ ഇവിടെയാണ് മാറ്റം വരുത്തിയത്: family_filter=0 എന്ന് ചേർത്തു, limit=10 ആക്കി
+            url = f"https://api.dailymotion.com/videos?fields=id,title,duration&search={query}&limit=10&family_filter=0"
             response = requests.get(url, timeout=10)
             data = response.json()
 
@@ -35,7 +35,7 @@ def setup(bot):
             markup = InlineKeyboardMarkup(row_width=1)
             for item in videos:
                 video_id = item['id']
-                title = item['title'][:35]  # Limit title length for buttons
+                title = item['title'][:35]  # ബട്ടണിൽ ഒതുങ്ങാൻ ടൈറ്റിൽ ചെറുതാക്കുന്നു
                 duration = item.get('duration', 0)
                 mins = duration // 60
                 secs = duration % 60
