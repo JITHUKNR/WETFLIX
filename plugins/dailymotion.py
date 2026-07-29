@@ -2,22 +2,17 @@ import os
 import re
 import urllib.parse
 import threading
+import queue  # ⚠️ കൃത്യമായി വർക്ക് ചെയ്യുന്ന പുതിയ ക്യൂ സിസ്റ്റം
 import requests
 import yt_dlp
 import random
 import asyncio
 
-# ⚠️ പ്രധാനപ്പെട്ട പരിഹാരം: Event Loop ക്രാഷ് ഒഴിവാക്കാൻ ⚠️
-try:
-    asyncio.get_event_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import Client
 
-# ⚠️ ഇവിടെയാണ് നമ്മൾ ക്യൂ സിസ്റ്റം ഉണ്ടാക്കുന്നത് ⚠️
-download_queue = asyncio.Queue()
+# ⚠️ ഉറപ്പായും വർക്ക് ചെയ്യുന്ന സ്റ്റാൻഡേർഡ് ക്യൂ ⚠️
+download_queue = queue.Queue()
 is_downloading = False
 
 def setup(bot):
@@ -31,21 +26,20 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # ബാക്ക്ഗ്രൗണ്ടിൽ ക്യൂവിലുള്ള ഓരോ വീഡിയോയും വരിവരിയായി എടുത്ത് പ്രോസസ്സ് ചെയ്യാൻ ഒരു വർക്കർ ഫംഗ്ഷൻ
-    async def process_queue():
+    # ബാക്ക്ഗ്രൗണ്ടിൽ വരിവരിയായി പ്രോസസ്സ് ചെയ്യുന്ന സിസ്റ്റം
+    def process_queue():
         global is_downloading
         while True:
             # ക്യൂവിൽ നിന്ന് അടുത്ത റിക്വസ്റ്റ് എടുക്കുന്നു
-            task = await download_queue.get()
+            task = download_queue.get()
             is_downloading = True
             
             message, query, status_msg = task
             
+            filename = f"vid_{message.chat.id}.mp4"
+            video_url = None
+            
             try:
-                # താങ്കളുടെ പഴയ ഡൗൺലോഡ് & അപ്‌ലോഡ് കോഡ് ഇവിടെ വരുന്നു
-                filename = f"vid_{message.chat.id}.mp4"
-                video_url = None
-                
                 bot.edit_message_text(f"🔎 **Your turn!** Searching HD 18+ Videos for **'{query}'**...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
                 encoded_query = urllib.parse.quote(query)
@@ -100,31 +94,34 @@ def setup(bot):
                     'age_limit': 18
                 }
 
-                # ബ്ലോക്കിംഗ് കോഡായ yt_dlp യെ മറ്റൊരു ത്രെഡിൽ ഓടിക്കുന്നു, അപ്പോൾ ബോട്ട് ഹാങ് ആവില്ല
-                loop = asyncio.get_event_loop()
-                def extract_info():
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        return ydl.extract_info(video_url, download=True)
-                
-                info = await loop.run_in_executor(None, extract_info)
-                title = info.get('title', 'HD 18+ Video')
-                duration = info.get('duration', 0)
-                width = info.get('width', 0)
-                height = info.get('height', 0)
+                # യാതൊരു എററുമില്ലാതെ സിമ്പിൾ ആയി ഡൗൺലോഡ് ചെയ്യുന്നു
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(video_url, download=True)
+                    title = info.get('title', 'HD 18+ Video')
+                    duration = info.get('duration', 0)
+                    width = info.get('width', 0)
+                    height = info.get('height', 0)
 
                 bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while for large files)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # Pyrogram വഴി അപ്‌ലോഡ് ചെയ്യുന്നു (No 50MB Limit)
-                async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
-                    await app.send_video(
-                        chat_id=message.chat.id,
-                        video=filename,
-                        caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot (HD)_",
-                        duration=duration,
-                        width=width,
-                        height=height,
-                        supports_streaming=True
-                    )
+                # ⚠️ 50MB ലിമിറ്റ് ഇല്ലാതെ Pyrogram വഴി അപ്‌ലോഡ് ചെയ്യാൻ ⚠️
+                async def do_upload():
+                    async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
+                        await app.send_video(
+                            chat_id=message.chat.id,
+                            video=filename,
+                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot (HD)_",
+                            duration=duration,
+                            width=width,
+                            height=height,
+                            supports_streaming=True
+                        )
+
+                # അപ്‌ലോഡ് കൃത്യമായി നടക്കാൻ പുതിയ ലൂപ്പ്
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(do_upload())
+                loop.close()
 
                 bot.delete_message(message.chat.id, status_msg.message_id)
 
@@ -138,12 +135,12 @@ def setup(bot):
                 if os.path.exists(filename):
                     os.remove(filename)
                 
-                # ഈ ടാസ്ക് കഴിഞ്ഞതായി ക്യൂവിനെ അറിയിക്കുന്നു
+                # ഒരു ആളുടെ ടാസ്ക് പൂർത്തിയായി എന്ന് ക്യൂവിനെ അറിയിക്കുന്നു (അടുത്ത ആളിലേക്ക് പോകാൻ)
                 download_queue.task_done()
                 is_downloading = False
 
-    # ബോട്ട് ഓൺ ആകുമ്പോൾ തന്നെ വർക്കർ ഫംഗ്ഷൻ ബാക്ക്ഗ്രൗണ്ടിൽ ഓടാൻ തുടങ്ങും
-    threading.Thread(target=lambda: asyncio.run(process_queue()), daemon=True).start()
+    # ബോട്ട് ഓൺ ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് പ്രോസസ്സ് സ്റ്റാർട്ട് ചെയ്യുന്നു
+    threading.Thread(target=process_queue, daemon=True).start()
 
 
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
@@ -160,15 +157,15 @@ def setup(bot):
 
             query = parts[1].strip()
             
-            # വീഡിയോ ഡൗൺലോഡ് ചെയ്തുകൊണ്ടിരിക്കുകയാണെങ്കിൽ വരിയിൽ നിർത്തുന്നു
+            # വീഡിയോ ഡൗൺലോഡ് ചെയ്തുകൊണ്ടിരിക്കുകയാണെങ്കിൽ ക്യൂവിലേക്ക് മാറ്റുന്നു
             if is_downloading or not download_queue.empty():
                 position = download_queue.qsize() + 1
                 status_msg = bot.reply_to(message, f"⏳ **Added to Queue!**\n\nYou are in position #{position}.\nPlease wait, your video for **'{query}'** will start processing soon...", parse_mode='Markdown')
             else:
                 status_msg = bot.reply_to(message, f"🔎 Processing request for **'{query}'**...", parse_mode='Markdown')
 
-            # റിക്വസ്റ്റ് ക്യൂവിലേക്ക് ചേർക്കുന്നു
-            asyncio.run(download_queue.put((message, query, status_msg)))
+            # റിക്വസ്റ്റ് യാതൊരു പ്രശ്നവുമില്ലാതെ ക്യൂവിലേക്ക് ഇടുന്നു
+            download_queue.put((message, query, status_msg))
 
         except Exception as e:
             bot.reply_to(message, f"❌ Error: `{e}`")
