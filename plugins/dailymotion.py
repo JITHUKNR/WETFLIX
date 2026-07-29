@@ -6,7 +6,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Premium Video Search Command (/search or /dm)
+    # Video Search Command (/search or /dm)
     @bot.message_handler(commands=['search', 'dm'])
     def search_videos(message):
         try:
@@ -14,7 +14,7 @@ def setup(bot):
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔍 **Premium Video Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search hot mallu`", 
+                    "🔍 **Video Search:**\n\n📖 *Usage:*\n`/search <video name>`\n\n💡 *Example:* `/search mallu`", 
                     parse_mode='Markdown'
                 )
                 return
@@ -22,34 +22,44 @@ def setup(bot):
             query = parts[1].strip()
             status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
 
-            url = f"https://www.eporner.com/api/v2/video/search/?query={query}&per_page=10"
-            response = requests.get(url, timeout=10)
+            # Redgifs / Free API വഴി സെർച്ച് ചെയ്യുന്നു (എല്ലാ വീഡിയോസും കിട്ടും)
+            url = f"https://api.redgifs.com/v2/search/gifs?search_text={query}&count=10"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            response = requests.get(url, headers=headers, timeout=10)
             
             if response.status_code != 200:
-                bot.edit_message_text("❌ API Error. Please try again later.", message.chat.id, status_msg.message_id)
+                bot.edit_message_text("❌ Search error. Please try another keyword.", message.chat.id, status_msg.message_id)
                 return
                 
             data = response.json()
-            videos = data.get("videos", [])
+            gifs = data.get("gifs", [])
             
-            if not videos:
-                bot.edit_message_text(f"❌ No videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id)
+            if not gifs:
+                bot.edit_message_text(f"❌ No videos found for '{query}'.", message.chat.id, status_msg.message_id)
                 return
 
             markup = InlineKeyboardMarkup(row_width=1)
-            for item in videos:
-                video_id = item['id']
-                title = item['title'][:35]
-                duration = item.get('length_sec', 0)
-                mins = duration // 60
-                secs = duration % 60
-                time_str = f"{mins}:{secs:02d}"
+            for idx, item in enumerate(gifs):
+                title = item.get('title', f'Video {idx+1}')
+                if not title or title.strip() == "":
+                    title = f"Exclusive Video {idx+1}"
+                title = title[:35]
                 
-                button_text = f"🔞 {title}... ({time_str})"
-                markup.add(InlineKeyboardButton(button_text, callback_data=f"dl_ep_{video_id}"))
+                # വീഡിയോയുടെ ഡൗൺലോഡ് ലിങ്ക് സേവ് ചെയ്യുന്നു
+                urls = item.get('urls', {})
+                hd_url = urls.get('hd') or urls.get('sd')
+                
+                if hd_url:
+                    # കോൾബാക്ക് ഡാറ്റ വലുതാകാതിരിക്കാൻ ഷോർട്ട് ഐഡി നൽകുന്നു
+                    markup.add(InlineKeyboardButton(f"🔞 {title}", callback_data=f"dl_rg_{idx}"))
+
+            # താൽക്കാലികമായി ലിങ്ക് സേവ് ചെയ്യാൻ ഗ്ലോബൽ ഡിക്ഷണറി ഉപയോഗിക്കുന്നു
+            if not hasattr(bot, 'search_cache'):
+                bot.search_cache = {}
+            bot.search_cache[message.from_user.id] = gifs
 
             bot.edit_message_text(
-                f"🔥 **Premium Search Results:** `{query}`\n\n👇 *Select a video to download:*", 
+                f"🔥 **Search Results for:** `{query}`\n\n👇 *Select a video to download:*", 
                 message.chat.id, 
                 status_msg.message_id, 
                 reply_markup=markup, 
@@ -59,55 +69,60 @@ def setup(bot):
         except Exception as e:
             bot.reply_to(message, f"❌ Search Error: `{e}`")
 
-    # Download Handler
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_ep_"))
-    def download_premium_video(call):
+    # Download Handler (ഡൗൺലോഡ് ചെയ്ത് ഫയലായി അയക്കുന്നു)
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("dl_rg_"))
+    def download_video_file(call):
         try:
-            video_id = call.data.replace("dl_ep_", "")
+            idx = int(call.data.replace("dl_rg_", ""))
+            user_id = call.from_user.id
             
-            bot.answer_callback_query(call.id, "⬇️ Preparing video...", show_alert=False)
-            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading Premium Video...**\n*This might take a minute based on size.*", parse_mode='Markdown')
+            if not hasattr(bot, 'search_cache') or user_id not in bot.search_cache:
+                bot.answer_callback_query(call.id, "❌ Session expired. Please search again.", show_alert=True)
+                return
+
+            gifs = bot.search_cache[user_id]
+            if idx >= len(gifs):
+                bot.answer_callback_query(call.id, "❌ Invalid selection.", show_alert=True)
+                return
+
+            item = gifs[idx]
+            urls = item.get('urls', {})
+            video_url = urls.get('hd') or urls.get('sd')
+            title = item.get('title', 'Video')
+
+            bot.answer_callback_query(call.id, "⬇️ Downloading video...", show_alert=False)
+            status_msg = bot.send_message(call.message.chat.id, "⏳ **Downloading video file... Please wait.**", parse_mode='Markdown')
 
             def run_download():
-                filename = f"vid_{video_id}.mp4"
-                
+                filename = f"video_{user_id}.mp4"
                 try:
-                    api_url = f"https://www.eporner.com/api/v2/video/id/?id={video_id}"
-                    res = requests.get(api_url, timeout=10).json()
-                    video_url = res.get('url')
-                    title = res.get('title', 'Premium Video')
+                    # വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു
+                    vid_data = requests.get(video_url, stream=True, timeout=30)
+                    with open(filename, 'wb') as f:
+                        for chunk in vid_data.iter_content(chunk_size=1024):
+                            if chunk:
+                                f.write(chunk)
 
-                    if not video_url:
-                        bot.edit_message_text("❌ Could not fetch video link.", call.message.chat.id, status_msg.message_id)
+                    # ഫയൽ സൈസ് പരിശോധിക്കുന്നു (50MB മുകളിലാണോ എന്ന് നോക്കാൻ)
+                    file_size = os.path.getsize(filename) / (1024 * 1024)
+                    if file_size > 48:
+                        bot.edit_message_text("❌ **File is larger than 50MB limit.** Please try a smaller video.", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
                         return
 
-                    # ⚠️ 50MB ലിമിറ്റ് മറികടക്കാൻ സൈസ് കുറഞ്ഞ ഫോർമാറ്റ് മാത്രം എടുക്കാൻ പറയുന്നു
-                    ydl_opts = {
-                        'format': 'best[height<=360][filesize<45M]/worst',
-                        'outtmpl': filename,
-                        'quiet': True,
-                        'no_warnings': True,
-                    }
-
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([video_url])
-
-                    # ഡൗൺലോഡ് കഴിഞ്ഞാൽ വീഡിയോ അയക്കുന്നു
+                    # ടെലഗ്രാമിലേക്ക് നേരിട്ട് വീഡിയോ ഫയലായി അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             call.message.chat.id, 
                             video_file, 
                             caption=f"🔥 **{title}**\n\n📥 _Downloaded via WETFLIX Bot_", 
                             parse_mode='Markdown',
-                            timeout=120  # വലിയ ഫയലുകൾ അയക്കാൻ സമയം കൊടുക്കുന്നു
+                            timeout=120
                         )
 
                     bot.delete_message(call.message.chat.id, status_msg.message_id)
 
                 except Exception as err:
-                    # എറർ വന്നാൽ യഥാർത്ഥ കാരണം പ്രിന്റ് ചെയ്യുന്നു
-                    error_str = str(err)[:150]
-                    bot.edit_message_text(f"❌ **Download Failed!**\n\n`{error_str}`\n\n*(Tip: Try selecting a shorter video under 5 minutes)*", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed:** `{err}`", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 finally:
                     if os.path.exists(filename):
                         os.remove(filename)
