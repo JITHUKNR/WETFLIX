@@ -109,7 +109,8 @@ def setup(bot):
                 last_time = user_cooldowns.get(user_id, 0)
                 if current_time - last_time < cooldown_limit:
                     remaining = int(cooldown_limit - (current_time - last_time))
-                    warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.\n\n💡 *Tip: Click 🎁 REFER to invite 5 friends and bypass this timer!*")
+                    # ⚠️ ഇവിടെയാണ് ആ പുതിയ ബോൾഡ് മെസ്സേജ് കൃത്യമായി ചേർത്തിട്ടുള്ളത് ⚠️
+                    warn_msg = bot.reply_to(message, f"⏳ Please wait **{remaining} seconds** before requesting another file.\n\n💡 **TIP: Want 7 Days FREE Premium? Click the 🎁 REFER button and invite 5 friends to use the bot without any wait time!**", parse_mode='Markdown')
                     threading.Timer(10.0, delete_message_after_delay, args=[bot, message.chat.id, warn_msg.message_id]).start()
                     return
 
