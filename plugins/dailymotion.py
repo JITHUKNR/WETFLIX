@@ -4,11 +4,12 @@ import urllib.parse
 import threading
 import requests
 import yt_dlp
+import random
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Ultimate 18+ Multi-Site Downloader
+    # Ultimate 18+ Multi-Site Downloader (With Randomizer & Streaming)
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
     def ultimate_adult_search(message):
         try:
@@ -37,45 +38,46 @@ def setup(bot):
                         resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}", headers=headers, timeout=10)
                         if resp.status_code == 200:
                             links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
+                            links = list(set(links)) # ഡ്യൂപ്ലിക്കേറ്റ് ഒഴിവാക്കുന്നു
                             if links:
-                                video_url = f"https://www.xvideos.com{links[0]}"
+                                # കിട്ടിയതിൽ നിന്ന് വ്യത്യസ്തമായ ഒരെണ്ണം തിരഞ്ഞെടുക്കുന്നു
+                                video_url = f"https://www.xvideos.com{random.choice(links[:15])}"
                     except:
                         pass
 
-                    # --- Source 2: XNXX Search (If XVideos fails) ---
+                    # --- Source 2: XNXX Search ---
                     if not video_url:
                         try:
                             resp = requests.get(f"https://www.xnxx.com/search/{encoded_query}", headers=headers, timeout=10)
                             if resp.status_code == 200:
                                 links = re.findall(r'href="(/video-[^"]+)"', resp.text)
+                                links = list(set(links))
                                 if links:
-                                    video_url = f"https://www.xnxx.com{links[0]}"
+                                    video_url = f"https://www.xnxx.com{random.choice(links[:15])}"
                         except:
                             pass
                             
-                    # --- Source 3: XHamster Search (If XNXX fails) ---
+                    # --- Source 3: XHamster Search ---
                     if not video_url:
                         try:
                             resp = requests.get(f"https://xhamster.com/search/{encoded_query}", headers=headers, timeout=10)
                             if resp.status_code == 200:
                                 links = re.findall(r'href="(https://xhamster\.com/videos/[^"]+)"', resp.text)
-                                for link in links:
-                                    if '/videos/' in link and 'user' not in link:
-                                        video_url = link
-                                        break
+                                valid_links = [l for l in set(links) if '/videos/' in l and 'user' not in l]
+                                if valid_links:
+                                    video_url = random.choice(valid_links[:15])
                         except:
                             pass
 
-                    # വീഡിയോ എവിടെ നിന്നും കിട്ടിയില്ലെങ്കിൽ
                     if not video_url:
                         bot.edit_message_text(f"❌ No 18+ videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                         return
 
                     bot.edit_message_text(f"⏳ **Video found! Downloading...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                    # yt-dlp ഉപയോഗിച്ച് ഡൗൺലോഡ് ചെയ്യുന്നു
+                    # yt-dlp: കൃത്യമായി MP4 ഫോർമാറ്റ് മാത്രം എടുക്കാൻ പറയുന്നു (സ്ട്രീമിങ്ങിന് വേണ്ടി)
                     ydl_opts = {
-                        'format': 'best[height<=480][filesize<49.5M]/best[height<=360][filesize<49.5M]/worst',
+                        'format': 'best[ext=mp4][height<=480][filesize<49.5M]/best[ext=mp4][height<=360][filesize<49.5M]/worst[ext=mp4]',
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
@@ -85,6 +87,9 @@ def setup(bot):
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(video_url, download=True)
                         title = info.get('title', '18+ Adult Video')
+                        duration = info.get('duration', 0)
+                        width = info.get('width', 0)
+                        height = info.get('height', 0)
 
                     # 50MB പരിധി ഉറപ്പുവരുത്തുന്നു
                     if os.path.exists(filename):
@@ -93,13 +98,17 @@ def setup(bot):
                             bot.edit_message_text(f"❌ **File is too large ({file_size_mb:.1f} MB)!** Telegram limit is 50MB.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                             return
 
-                    # വീഡിയോ ടെലഗ്രാമിലേക്ക് ഫയലായി അയക്കുന്നു
+                    # വീഡിയോ പ്ലേ ചെയ്യാവുന്ന രീതിയിൽ (Streaming) അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             message.chat.id, 
                             video_file, 
                             caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_", 
                             parse_mode='Markdown',
+                            supports_streaming=True,  # ഇതാണ് ഡൗൺലോഡ് ചെയ്യുമ്പോൾ തന്നെ പ്ലേ ചെയ്യാൻ സഹായിക്കുന്നത്!
+                            duration=duration,
+                            width=width,
+                            height=height,
                             timeout=180
                         )
 
