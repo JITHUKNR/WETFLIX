@@ -1,80 +1,79 @@
 import os
-import threading
-import urllib.parse
-import yt_dlp
-import requests
 import re
+import urllib.parse
+import threading
+import requests
+import yt_dlp
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # Universal 18+ Global Video Search (Uncensored)
+    # Ultimate 18+ Multi-Site Downloader
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
-    def global_uncensored_search(message):
+    def ultimate_adult_search(message):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔥 **Global 18+ Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search mallu bhabhi`", 
+                    "🔥 **18+ Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search pussy eat`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
-            status_msg = bot.reply_to(message, f"🔎 Searching Global Web for **'{query}'**...", parse_mode='Markdown')
+            status_msg = bot.reply_to(message, f"🔎 Searching 18+ Networks for **'{query}'**...", parse_mode='Markdown')
 
             def run_process():
                 filename = f"vid_{message.chat.id}.mp4"
+                video_url = None
+                
                 try:
-                    # Step 1: DuckDuckGo വഴി അഡൾട്ട് വീഡിയോകൾ സെർച്ച് ചെയ്യുന്നു (No SafeSearch limit)
-                    # അഡൾട്ട് റിസൾട്ടുകൾ മാത്രം കിട്ടാൻ 'porn' അല്ലെങ്കിൽ 'video' എന്ന വാക്ക് ചേർക്കുന്നു
-                    search_term = f"{query} porn video"
-                    encoded_query = urllib.parse.quote(search_term)
-                    
-                    # DuckDuckGo HTML വെർഷൻ ഉപയോഗിക്കുന്നു (API ബ്ലോക്ക് ഒഴിവാക്കാൻ)
-                    html_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                    
-                    resp = requests.get(html_url, headers=headers, timeout=10)
-                    
-                    if resp.status_code != 200:
-                        raise Exception("Failed to fetch search results from web.")
+                    encoded_query = urllib.parse.quote(query)
+                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-                    # റിസൾട്ടിൽ നിന്ന് വീഡിയോ ഉള്ള വെബ്സൈറ്റ് ലിങ്കുകൾ കണ്ടെത്തുന്നു (ഉദാഹരണത്തിന് xhamster, pornhub, xnxx തുടങ്ങിയവ)
-                    links = re.findall(r'href="(https?://[^"]+)"', resp.text)
-                    
-                    valid_video_url = None
-                    # പ്രധാനപ്പെട്ട 18+ സൈറ്റുകളുടെ ലിങ്കുകൾ മാത്രം ഫിൽറ്റർ ചെയ്തെടുക്കുന്നു
-                    adult_sites = ['xhamster', 'pornhub', 'xnxx', 'eporner', 'spankbang', 'xvideos']
-                    
-                    for link in links:
-                        # ഗൂഗിൾ, ഡക്ക്ഡക്ക്ഗോ ലിങ്കുകൾ ഒഴിവാക്കുന്നു
-                        if 'duckduckgo' in link or 'google' in link:
-                            continue
-                        
-                        # വീഡിയോ സൈറ്റുകൾ ആണോ എന്ന് നോക്കുന്നു
-                        if any(site in link for site in adult_sites):
-                            # redirect URL ആണെങ്കിൽ അത് ഡീകോഡ് ചെയ്തെടുക്കുന്നു
-                            if 'uddg=' in link:
-                                try:
-                                    parsed = urllib.parse.parse_qs(urllib.parse.urlparse(link).query)
-                                    if 'uddg' in parsed:
-                                        valid_video_url = parsed['uddg'][0]
+                    # --- Source 1: XVideos Search ---
+                    try:
+                        resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}", headers=headers, timeout=10)
+                        if resp.status_code == 200:
+                            links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
+                            if links:
+                                video_url = f"https://www.xvideos.com{links[0]}"
+                    except:
+                        pass
+
+                    # --- Source 2: XNXX Search (If XVideos fails) ---
+                    if not video_url:
+                        try:
+                            resp = requests.get(f"https://www.xnxx.com/search/{encoded_query}", headers=headers, timeout=10)
+                            if resp.status_code == 200:
+                                links = re.findall(r'href="(/video-[^"]+)"', resp.text)
+                                if links:
+                                    video_url = f"https://www.xnxx.com{links[0]}"
+                        except:
+                            pass
+                            
+                    # --- Source 3: XHamster Search (If XNXX fails) ---
+                    if not video_url:
+                        try:
+                            resp = requests.get(f"https://xhamster.com/search/{encoded_query}", headers=headers, timeout=10)
+                            if resp.status_code == 200:
+                                links = re.findall(r'href="(https://xhamster\.com/videos/[^"]+)"', resp.text)
+                                for link in links:
+                                    if '/videos/' in link and 'user' not in link:
+                                        video_url = link
                                         break
-                                except:
-                                    pass
-                            else:
-                                valid_video_url = link
-                                break
+                        except:
+                            pass
 
-                    if not valid_video_url:
-                        bot.edit_message_text(f"❌ No suitable 18+ videos found globally for '{query}'. Try another keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    # വീഡിയോ എവിടെ നിന്നും കിട്ടിയില്ലെങ്കിൽ
+                    if not video_url:
+                        bot.edit_message_text(f"❌ No 18+ videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                         return
 
-                    bot.edit_message_text(f"⏳ **Found Video Globally! Downloading...**\n`{valid_video_url[:30]}...`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"⏳ **Video found! Downloading...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                    # Step 2: yt-dlp ഉപയോഗിച്ച് വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു
+                    # yt-dlp ഉപയോഗിച്ച് ഡൗൺലോഡ് ചെയ്യുന്നു
                     ydl_opts = {
                         'format': 'best[height<=480][filesize<49.5M]/best[height<=360][filesize<49.5M]/worst',
                         'outtmpl': filename,
@@ -84,8 +83,8 @@ def setup(bot):
                     }
 
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        info = ydl.extract_info(valid_video_url, download=True)
-                        title = info.get('title', 'Global 18+ Video')
+                        info = ydl.extract_info(video_url, download=True)
+                        title = info.get('title', '18+ Adult Video')
 
                     # 50MB പരിധി ഉറപ്പുവരുത്തുന്നു
                     if os.path.exists(filename):
@@ -94,12 +93,12 @@ def setup(bot):
                             bot.edit_message_text(f"❌ **File is too large ({file_size_mb:.1f} MB)!** Telegram limit is 50MB.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                             return
 
-                    # Step 3: ടെലഗ്രാമിലേക്ക് നേരിട്ട് വീഡിയോ ഫയലായി അയക്കുന്നു
+                    # വീഡിയോ ടെലഗ്രാമിലേക്ക് ഫയലായി അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             message.chat.id, 
                             video_file, 
-                            caption=f"🔞 **{title}**\n\n📥 _Downloaded via WETFLIX Bot_", 
+                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_", 
                             parse_mode='Markdown',
                             timeout=180
                         )
