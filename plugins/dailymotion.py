@@ -22,7 +22,6 @@ def setup(bot):
             query = parts[1].strip()
             status_msg = bot.reply_to(message, f"🔎 Searching for **'{query}'**...", parse_mode='Markdown')
 
-            # Unrestricted 18+ API Search 
             url = f"https://www.eporner.com/api/v2/video/search/?query={query}&per_page=10"
             response = requests.get(url, timeout=10)
             
@@ -40,7 +39,7 @@ def setup(bot):
             markup = InlineKeyboardMarkup(row_width=1)
             for item in videos:
                 video_id = item['id']
-                title = item['title'][:35]  # ബട്ടണിൽ ഒതുങ്ങാൻ ടൈറ്റിൽ ചെറുതാക്കുന്നു
+                title = item['title'][:35]
                 duration = item.get('length_sec', 0)
                 mins = duration // 60
                 secs = duration % 60
@@ -73,18 +72,18 @@ def setup(bot):
                 filename = f"vid_{video_id}.mp4"
                 
                 try:
-                    # ഫുൾ വീഡിയോ ലിങ്ക് എടുക്കുന്നു
                     api_url = f"https://www.eporner.com/api/v2/video/id/?id={video_id}"
                     res = requests.get(api_url, timeout=10).json()
                     video_url = res.get('url')
                     title = res.get('title', 'Premium Video')
 
                     if not video_url:
-                        raise Exception("Could not fetch video link.")
+                        bot.edit_message_text("❌ Could not fetch video link.", call.message.chat.id, status_msg.message_id)
+                        return
 
-                    # Telegram-ൽ 50MB ക്ക് മുകളിലുള്ള ഫയലുകൾ അയക്കാൻ പറ്റാത്തത് കൊണ്ട് സൈസ് കുറഞ്ഞ ഫോർമാറ്റ് എടുക്കുന്നു
+                    # ⚠️ 50MB ലിമിറ്റ് മറികടക്കാൻ സൈസ് കുറഞ്ഞ ഫോർമാറ്റ് മാത്രം എടുക്കാൻ പറയുന്നു
                     ydl_opts = {
-                        'format': 'best[filesize<49M]/best[height<=480]/best[height<=360]/best',
+                        'format': 'best[height<=360][filesize<45M]/worst',
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
@@ -93,20 +92,23 @@ def setup(bot):
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                         ydl.download([video_url])
 
+                    # ഡൗൺലോഡ് കഴിഞ്ഞാൽ വീഡിയോ അയക്കുന്നു
                     with open(filename, 'rb') as video_file:
                         bot.send_video(
                             call.message.chat.id, 
                             video_file, 
                             caption=f"🔥 **{title}**\n\n📥 _Downloaded via WETFLIX Bot_", 
-                            parse_mode='Markdown'
+                            parse_mode='Markdown',
+                            timeout=120  # വലിയ ഫയലുകൾ അയക്കാൻ സമയം കൊടുക്കുന്നു
                         )
 
                     bot.delete_message(call.message.chat.id, status_msg.message_id)
 
                 except Exception as err:
-                    bot.edit_message_text(f"❌ **Download Failed! (File might be larger than 50MB)**", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    # എറർ വന്നാൽ യഥാർത്ഥ കാരണം പ്രിന്റ് ചെയ്യുന്നു
+                    error_str = str(err)[:150]
+                    bot.edit_message_text(f"❌ **Download Failed!**\n\n`{error_str}`\n\n*(Tip: Try selecting a shorter video under 5 minutes)*", call.message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 finally:
-                    # ഫയൽ അയച്ചു കഴിഞ്ഞാൽ ഡിലീറ്റ് ചെയ്യുന്നു (സെർവർ ഫുൾ ആകാതിരിക്കാൻ)
                     if os.path.exists(filename):
                         os.remove(filename)
 
