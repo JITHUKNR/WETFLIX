@@ -6,13 +6,21 @@ import requests
 import yt_dlp
 import random
 import asyncio
+
+# ⚠️ പ്രധാനപ്പെട്ട പരിഹാരം: Event Loop ക്രാഷ് ഒഴിവാക്കാൻ ⚠️
+try:
+    asyncio.get_event_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import Client
 
 def setup(bot):
 
     # Render Environment-ൽ നിന്നും API വിവരങ്ങൾ എടുക്കുന്നു
-    API_ID = int(os.environ.get("API_ID", 0)) 
+    API_ID_STR = os.environ.get("API_ID")
+    API_ID = int(API_ID_STR) if API_ID_STR else 0
     API_HASH = os.environ.get("API_HASH", "")
     BOT_TOKEN = bot.token
 
@@ -35,6 +43,10 @@ def setup(bot):
             status_msg = bot.reply_to(message, f"🔎 Searching HD 18+ Videos for **'{query}'**...", parse_mode='Markdown')
 
             def run_process():
+                # ഡൗൺലോഡിന് വേണ്ടി പുതിയ ഇവന്റ് ലൂപ്പ് സെറ്റ് ചെയ്യുന്നു
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
                 filename = f"vid_{message.chat.id}.mp4"
                 video_url = None
                 
@@ -81,9 +93,9 @@ def setup(bot):
 
                     bot.edit_message_text(f"⏳ **Video found! Downloading Best Quality...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                    # ⚠️ 50MB ലിമിറ്റും ഫോർമാറ്റ് ലിമിറ്റും എടുത്തു കളഞ്ഞു ⚠️
+                    # ⚠️ യാതൊരു ലിമിറ്റും ഇല്ലാതെ ഏറ്റവും മികച്ചത് ഡൗൺലോഡ് ചെയ്യാൻ ⚠️
                     ydl_opts = {
-                        'format': 'best', # കിട്ടാവുന്നതിൽ ഏറ്റവും നല്ലത് എടുക്കും
+                        'format': 'best', 
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
@@ -97,7 +109,7 @@ def setup(bot):
                         width = info.get('width', 0)
                         height = info.get('height', 0)
 
-                    bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while for large files)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
                     # ⚠️ Pyrogram വഴി അപ്‌ലോഡ് ചെയ്യുന്നു (No 50MB Limit) ⚠️
                     async def upload_with_pyrogram():
@@ -112,11 +124,8 @@ def setup(bot):
                                 supports_streaming=True
                             )
 
-                    # പുതിയ ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കി ഫയൽ സുരക്ഷിതമായി അപ്‌ലോഡ് ചെയ്യുന്നു
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+                    # ഫയൽ അപ്‌ലോഡ് ചെയ്യുന്നു
                     loop.run_until_complete(upload_with_pyrogram())
-                    loop.close()
 
                     bot.delete_message(message.chat.id, status_msg.message_id)
 
@@ -129,6 +138,8 @@ def setup(bot):
                 finally:
                     if os.path.exists(filename):
                         os.remove(filename)
+                    # ലൂപ്പ് ക്ലോസ് ചെയ്യുന്നു
+                    loop.close()
 
             threading.Thread(target=run_process).start()
 
