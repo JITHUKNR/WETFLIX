@@ -5,3 +5,5 @@ Flask
 psutil
 qrcode
 Pillow
+requests
+yt-dlp
