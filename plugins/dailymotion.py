@@ -6,17 +6,24 @@ import queue
 import requests
 import yt_dlp
 import random
+import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client
 
-# സുരക്ഷിതമായ ക്യൂ സിസ്റ്റം
 download_queue = queue.Queue()
 is_downloading = False
 
 def setup(bot):
+    # API വിവരങ്ങൾ
+    API_ID_STR = os.environ.get("API_ID")
+    API_ID = int(API_ID_STR) if API_ID_STR else 0
+    API_HASH = os.environ.get("API_HASH", "")
     BOT_TOKEN = bot.token
 
-    # ബാക്ക്ഗ്രൗണ്ടിൽ വർക്ക് ചെയ്യുന്ന ക്യൂ സിസ്റ്റം
+    if not API_ID or not API_HASH:
+        print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
+
     def process_queue():
         global is_downloading
         while True:
@@ -28,7 +35,7 @@ def setup(bot):
             video_url = None
             
             try:
-                bot.edit_message_text(f"🔎 **Your turn!** Searching HD 18+ Videos for **'{query}'**...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"🔎 **Your turn!** Searching HD Videos for **'{query}'**...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
                 encoded_query = urllib.parse.quote(query)
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -69,11 +76,11 @@ def setup(bot):
                     is_downloading = False
                     continue
 
-                bot.edit_message_text(f"⏳ **Video found! Downloading Best Quality...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"⏳ **Video found! Downloading (Max ~100MB)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # യാതൊരു ലിമിറ്റും ഇല്ലാതെ വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു
+                # ⚠️ ഇവിടെയാണ് നമ്മൾ മാക്സിമം ഫയൽ സൈസ് വെക്കുന്നത് (120MB വരെ) ⚠️
                 ydl_opts = {
-                    'format': 'best', 
+                    'format': 'best[ext=mp4][filesize<120M]/best[filesize<120M]', 
                     'outtmpl': filename,
                     'quiet': True,
                     'no_warnings': True,
@@ -83,31 +90,44 @@ def setup(bot):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(video_url, download=True)
                     title = info.get('title', 'HD 18+ Video')
+                    duration = info.get('duration', 0)
+                    width = info.get('width', 0)
+                    height = info.get('height', 0)
                     
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Bypassing Limits)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Please wait)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ ടെലഗ്രാമിന്റെ ലോക്കൽ API അല്ലെങ്കിൽ Requests ഉപയോഗിച്ച് വലിയ ഫയൽ അയക്കുന്നു ⚠️
-                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
-                with open(filename, 'rb') as video_file:
-                    files = {'video': video_file}
-                    data = {
-                        'chat_id': message.chat.id,
-                        'caption': f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_",
-                        'parse_mode': 'Markdown',
-                        'supports_streaming': 'true'
-                    }
-                    response = requests.post(url, data=data, files=files)
+                # ⚠️ 50MB ലിമിറ്റ് ബൈപ്പാസ് ചെയ്യാൻ Pyrogram ഉപയോഗിക്കുന്നു (MainThread എറർ വരാത്ത രീതിയിൽ) ⚠️
+                def run_pyrogram_upload():
+                    # പുതിയൊരു ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കുന്നു
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    async def upload():
+                        async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
+                            await app.send_video(
+                                chat_id=message.chat.id,
+                                video=filename,
+                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_",
+                                duration=duration,
+                                width=width,
+                                height=height,
+                                supports_streaming=True
+                            )
+                            
+                    loop.run_until_complete(upload())
+                    loop.close()
+
+                # Pyrogram അപ്‌ലോഡ് മറ്റൊരു ത്രെഡിൽ ഓടിക്കുന്നു
+                upload_thread = threading.Thread(target=run_pyrogram_upload)
+                upload_thread.start()
+                upload_thread.join() # അപ്‌ലോഡ് കഴിയുന്നത് വരെ കാത്തിരിക്കുന്നു
                 
-                # ഫയൽ അയച്ചുകഴിഞ്ഞാൽ മെസ്സേജ് ഡിലീറ്റ് ചെയ്യുന്നു
-                if response.status_code == 200:
-                    bot.delete_message(message.chat.id, status_msg.message_id)
-                else:
-                    raise Exception("Failed to upload via API")
+                bot.delete_message(message.chat.id, status_msg.message_id)
 
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Download Failed! (File might be too large for this server)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed! (File might be larger than 120MB)**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except:
                     pass
             finally:
@@ -117,7 +137,7 @@ def setup(bot):
                 download_queue.task_done()
                 is_downloading = False
 
-    # പ്ലഗിൻ ലോഡ് ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് പ്രോസസ്സ് സ്റ്റാർട്ട് ചെയ്യുന്നു
+    # പ്ലഗിൻ ലോഡ് ആകുമ്പോൾ തന്നെ വർക്കർ സ്റ്റാർട്ട് ചെയ്യുന്നു
     threading.Thread(target=process_queue, daemon=True).start()
 
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
