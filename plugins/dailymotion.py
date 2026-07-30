@@ -6,16 +6,26 @@ import queue
 import requests
 import yt_dlp
 import random
+import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client
 
-# ⚠️ യാതൊരുവിധ അസിൻക് (Async) കോഡുകളുമില്ലാത്ത ശുദ്ധമായ ക്യൂ സിസ്റ്റം ⚠️
+# ക്യൂ സിസ്റ്റം
 download_queue = queue.Queue()
 is_downloading = False
 
 def setup(bot):
+    # API വിവരങ്ങൾ
+    API_ID_STR = os.environ.get("API_ID")
+    API_ID = int(API_ID_STR) if API_ID_STR else 0
+    API_HASH = os.environ.get("API_HASH", "")
     BOT_TOKEN = bot.token
 
+    if not API_ID or not API_HASH:
+        print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
+
+    # ബാക്ക്ഗ്രൗണ്ടിൽ ഓരോരുത്തർക്കും വരിവരിയായി വീഡിയോ കൊടുക്കാനുള്ള സിസ്റ്റം
     def process_queue():
         global is_downloading
         while True:
@@ -27,7 +37,7 @@ def setup(bot):
             video_url = None
             
             try:
-                bot.edit_message_text(f"🔎 **Your turn!** Searching Videos for **'{query}'**...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"🔎 **Your turn!** Searching HD 18+ Videos for **'{query}'**...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
                 encoded_query = urllib.parse.quote(query)
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -68,11 +78,11 @@ def setup(bot):
                     is_downloading = False
                     continue
 
-                bot.edit_message_text(f"⏳ **Video found! Downloading (Max 120MB)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"⏳ **Video found! Downloading Best Quality (No 50MB Limit)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ പരമാവധി 120MB വരെ സൈസ് ഉള്ള വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു ⚠️
+                # യാതൊരു ലിമിറ്റുമില്ലാതെ ഫുൾ HD വീഡിയോ എടുക്കുന്നു
                 ydl_opts = {
-                    'format': 'best[ext=mp4][filesize<125M]/best[filesize<125M]', 
+                    'format': 'best',
                     'outtmpl': filename,
                     'quiet': True,
                     'no_warnings': True,
@@ -82,29 +92,45 @@ def setup(bot):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(video_url, download=True)
                     title = info.get('title', 'HD 18+ Video')
-                    
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Please wait, large files take time)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    duration = info.get('duration', 0)
+                    width = info.get('width', 0)
+                    height = info.get('height', 0)
 
-                # ⚠️ ടെലഗ്രാമിന്റെ 50MB ലിമിറ്റ് വലിയൊരു പരിധിവരെ മറികടക്കാൻ bot.send_video വഴി തന്നെ അയക്കുന്നു.
-                # നിലവിൽ പുതിയ ടെലബോട്ട് വേർഷനുകളിൽ വലിയ ഫയലുകൾ അയക്കാൻ സപ്പോർട്ട് ഉണ്ട്. ⚠️
-                with open(filename, 'rb') as video_file:
-                    bot.send_video(
-                        chat_id=message.chat.id,
-                        video=video_file,
-                        caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_",
-                        parse_mode='Markdown',
-                        supports_streaming=True,
-                        timeout=300 # അപ്‌ലോഡ് ചെയ്യാൻ 5 മിനിറ്റ് വരെ സമയം കൊടുക്കുന്നു
-                    )
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while for large files)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+
+                # ⚠️ 150MB+ വീഡിയോകൾ അയക്കാൻ പഴയ Pyrogram കോഡ് (എറർ വരാത്ത രീതിയിൽ) ⚠️
+                def run_pyrogram_upload():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    async def upload():
+                        async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
+                            await app.send_video(
+                                chat_id=message.chat.id,
+                                video=filename,
+                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot (HD)_",
+                                duration=duration,
+                                width=width,
+                                height=height,
+                                supports_streaming=True
+                            )
+                            
+                    loop.run_until_complete(upload())
+                    loop.close()
+
+                # അപ്‌ലോഡ് മാത്രം ഒരു പ്രത്യേക ത്രെഡിൽ ഓടിക്കുന്നു (MainThread എറർ ഒഴിവാക്കാൻ)
+                upload_thread = threading.Thread(target=run_pyrogram_upload)
+                upload_thread.start()
+                upload_thread.join()
                 
                 bot.delete_message(message.chat.id, status_msg.message_id)
 
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Upload Failed! (File exceeded maximum size limits)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except:
-                    bot.send_message(message.chat.id, f"❌ **Upload Failed!**")
+                    pass
             finally:
                 if os.path.exists(filename):
                     os.remove(filename)
@@ -122,13 +148,14 @@ def setup(bot):
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔥 **18+ Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search hot mallu`", 
+                    "🔥 **18+ HD Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search hot mallu`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
             
+            # ക്യൂ സിസ്റ്റം
             if is_downloading or not download_queue.empty():
                 position = download_queue.qsize() + 1
                 status_msg = bot.reply_to(message, f"⏳ **Added to Queue!**\n\nYou are in position #{position}.\nPlease wait, your video for **'{query}'** will start processing soon...", parse_mode='Markdown')
