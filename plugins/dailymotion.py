@@ -6,17 +6,14 @@ import queue
 import requests
 import yt_dlp
 import random
-import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram import Client
 
 # ക്യൂ സിസ്റ്റം
 download_queue = queue.Queue()
 is_downloading = False
 
 def setup(bot):
-    # API വിവരങ്ങൾ
     API_ID_STR = os.environ.get("API_ID")
     API_ID = int(API_ID_STR) if API_ID_STR else 0
     API_HASH = os.environ.get("API_HASH", "")
@@ -25,7 +22,36 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # ബാക്ക്ഗ്രൗണ്ടിൽ ഓരോരുത്തർക്കും വരിവരിയായി വീഡിയോ കൊടുക്കാനുള്ള സിസ്റ്റം
+    # 🌐 ഗൂഗിളിൽ/വെബിൽ നിന്ന് ഏത് സൈറ്റിൽ നിന്നായാലും വീഡിയോ തപ്പിയെടുക്കാനുള്ള ഫംഗ്ഷൻ
+    def get_video_url_from_web(query):
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        
+        # രീതി 1: DuckDuckGo വഴി വെബിൽ മൊത്തത്തിൽ സെർച്ച് ചെയ്യുന്നു
+        try:
+            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query + ' video')}"
+            res = requests.get(search_url, headers=headers, timeout=10)
+            urls = re.findall(r'href="([^"]+)"', res.text)
+            
+            # ലോകത്തുള്ള ഒട്ടുമിക്ക പോപ്പുലർ സൈറ്റുകളും ഇതിൽ സപ്പോർട്ട് ചെയ്യും
+            valid_domains = ['xvideos.com', 'xnxx.com', 'xhamster.com', 'pornhub.com', 'spankbang.com', 'eporner.com', 'hqporner.com', 'beeg.com', 'tnaflix.com', 'tube8.com']
+            for u in urls:
+                if 'uddg=' in u:
+                    u = urllib.parse.unquote(u.split('uddg=')[1].split('&')[0])
+                for domain in valid_domains:
+                    if domain in u and 'search' not in u and 'category' not in u:
+                        return u
+        except: pass
+        
+        # രീതി 2: മുകളിലത്തെ രീതി കിട്ടിയില്ലെങ്കിൽ നേരിട്ടുള്ള സെർച്ച് (Fallback)
+        try:
+            encoded_query = urllib.parse.quote(query)
+            resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=10)
+            links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
+            if links: return f"https://www.xvideos.com{random.choice(list(set(links))[:10])}"
+        except: pass
+        
+        return None
+
     def process_queue():
         global is_downloading
         while True:
@@ -34,55 +60,26 @@ def setup(bot):
             
             message, query, status_msg = task
             filename = f"vid_{message.chat.id}.mp4"
-            video_url = None
             
             try:
-                bot.edit_message_text(f"🔎 **Your turn!** Searching HD 18+ Videos for **'{query}'**...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"🔎 **Searching the web** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
-                encoded_query = urllib.parse.quote(query)
-                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-
-                # --- Source 1: XVideos Search ---
-                try:
-                    resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=10)
-                    if resp.status_code == 200:
-                        links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
-                        if links:
-                            video_url = f"https://www.xvideos.com{random.choice(list(set(links))[:15])}"
-                except: pass
-
-                # --- Source 2: XNXX Search ---
-                if not video_url:
-                    try:
-                        resp = requests.get(f"https://www.xnxx.com/search/{encoded_query}", headers=headers, timeout=10)
-                        if resp.status_code == 200:
-                            links = re.findall(r'href="(/video-[^"]+)"', resp.text)
-                            if links:
-                                video_url = f"https://www.xnxx.com{random.choice(list(set(links))[:15])}"
-                    except: pass
-                        
-                # --- Source 3: XHamster Search ---
-                if not video_url:
-                    try:
-                        resp = requests.get(f"https://xhamster.com/search/{encoded_query}?sort=best", headers=headers, timeout=10)
-                        if resp.status_code == 200:
-                            links = re.findall(r'href="(https://xhamster\.com/videos/[^"]+)"', resp.text)
-                            valid_links = [l for l in set(links) if '/videos/' in l and 'user' not in l]
-                            if valid_links:
-                                video_url = random.choice(valid_links[:15])
-                    except: pass
+                # വെബിൽ നിന്ന് ലിങ്ക് എടുക്കുന്നു
+                video_url = get_video_url_from_web(query)
 
                 if not video_url:
-                    bot.edit_message_text(f"❌ No suitable videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ No suitable videos found on the web for '{query}'.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                     download_queue.task_done()
                     is_downloading = False
                     continue
 
-                bot.edit_message_text(f"⏳ **Video found! Downloading Best Quality (No 50MB Limit)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                # എവിടുന്ന് കിട്ടി എന്ന സൈറ്റിന്റെ പേരും കാണിക്കും
+                domain_name = urllib.parse.urlparse(video_url).netloc
+                bot.edit_message_text(f"⏳ **Video found! Downloading (Max 150MB)...**\n🔗 Source: `{domain_name}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # യാതൊരു ലിമിറ്റുമില്ലാതെ ഫുൾ HD വീഡിയോ എടുക്കുന്നു
+                # ⚠️ 150MB സൈസ് ലിമിറ്റ് ⚠️
                 ydl_opts = {
-                    'format': 'best',
+                    'format': 'best[ext=mp4][filesize<150M]/best[filesize<150M]',
                     'outtmpl': filename,
                     'quiet': True,
                     'no_warnings': True,
@@ -96,10 +93,13 @@ def setup(bot):
                     width = info.get('width', 0)
                     height = info.get('height', 0)
 
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while for large files)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram for large file)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ 150MB+ വീഡിയോകൾ അയക്കാൻ പഴയ Pyrogram കോഡ് (എറർ വരാത്ത രീതിയിൽ) ⚠️
+                # ⚠️ MAINTHREAD എറർ ഒഴിവാക്കാൻ PYROGRAM ഉള്ളിലാക്കി വെച്ചിരിക്കുന്നു ⚠️
                 def run_pyrogram_upload():
+                    import asyncio
+                    from pyrogram import Client
+                    
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     
@@ -108,7 +108,7 @@ def setup(bot):
                             await app.send_video(
                                 chat_id=message.chat.id,
                                 video=filename,
-                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot (HD)_",
+                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
                                 duration=duration,
                                 width=width,
                                 height=height,
@@ -118,7 +118,7 @@ def setup(bot):
                     loop.run_until_complete(upload())
                     loop.close()
 
-                # അപ്‌ലോഡ് മാത്രം ഒരു പ്രത്യേക ത്രെഡിൽ ഓടിക്കുന്നു (MainThread എറർ ഒഴിവാക്കാൻ)
+                # അപ്‌ലോഡ് മറ്റൊരു ത്രെഡിൽ ഓടിക്കുന്നു
                 upload_thread = threading.Thread(target=run_pyrogram_upload)
                 upload_thread.start()
                 upload_thread.join()
@@ -128,9 +128,8 @@ def setup(bot):
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Download Failed!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                except:
-                    pass
+                    bot.edit_message_text(f"❌ **Download Failed! (Might be larger than 150MB)**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                except: pass
             finally:
                 if os.path.exists(filename):
                     os.remove(filename)
@@ -148,14 +147,13 @@ def setup(bot):
             if len(parts) < 2:
                 bot.reply_to(
                     message, 
-                    "🔥 **18+ HD Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search hot mallu`", 
+                    "🔥 **Web Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search hot mallu`", 
                     parse_mode='Markdown'
                 )
                 return
 
             query = parts[1].strip()
             
-            # ക്യൂ സിസ്റ്റം
             if is_downloading or not download_queue.empty():
                 position = download_queue.qsize() + 1
                 status_msg = bot.reply_to(message, f"⏳ **Added to Queue!**\n\nYou are in position #{position}.\nPlease wait, your video for **'{query}'** will start processing soon...", parse_mode='Markdown')
