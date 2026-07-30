@@ -2,7 +2,7 @@ import os
 import re
 import urllib.parse
 import threading
-import queue  # ⚠️ കൃത്യമായി വർക്ക് ചെയ്യുന്ന പുതിയ ക്യൂ സിസ്റ്റം
+import queue
 import requests
 import yt_dlp
 import random
@@ -26,16 +26,20 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # ബാക്ക്ഗ്രൗണ്ടിൽ വരിവരിയായി പ്രോസസ്സ് ചെയ്യുന്ന സിസ്റ്റം
+    # ⚠️ ബാക്ക്ഗ്രൗണ്ടിൽ മാത്രം പ്രവർത്തിക്കുന്ന സുരക്ഷിതമായ വർക്കർ ⚠️
     def process_queue():
         global is_downloading
+        
+        # ഈ ത്രെഡിന് വേണ്ടി മാത്രം പുതിയൊരു ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കുന്നു (MainThread ക്രാഷ് ഒഴിവാക്കാൻ)
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         while True:
             # ക്യൂവിൽ നിന്ന് അടുത്ത റിക്വസ്റ്റ് എടുക്കുന്നു
             task = download_queue.get()
             is_downloading = True
             
             message, query, status_msg = task
-            
             filename = f"vid_{message.chat.id}.mp4"
             video_url = None
             
@@ -52,8 +56,7 @@ def setup(bot):
                         links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
                         if links:
                             video_url = f"https://www.xvideos.com{random.choice(list(set(links))[:15])}"
-                except:
-                    pass
+                except: pass
 
                 # --- Source 2: XNXX Search ---
                 if not video_url:
@@ -63,8 +66,7 @@ def setup(bot):
                             links = re.findall(r'href="(/video-[^"]+)"', resp.text)
                             if links:
                                 video_url = f"https://www.xnxx.com{random.choice(list(set(links))[:15])}"
-                    except:
-                        pass
+                    except: pass
                         
                 # --- Source 3: XHamster Search ---
                 if not video_url:
@@ -75,8 +77,7 @@ def setup(bot):
                             valid_links = [l for l in set(links) if '/videos/' in l and 'user' not in l]
                             if valid_links:
                                 video_url = random.choice(valid_links[:15])
-                    except:
-                        pass
+                    except: pass
 
                 if not video_url:
                     bot.edit_message_text(f"❌ No suitable videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
@@ -117,12 +118,8 @@ def setup(bot):
                             supports_streaming=True
                         )
 
-                # അപ്‌ലോഡ് കൃത്യമായി നടക്കാൻ പുതിയ ലൂപ്പ്
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # ടാസ്ക് എക്സിക്യൂട്ട് ചെയ്യുന്നു
                 loop.run_until_complete(do_upload())
-                loop.close()
-
                 bot.delete_message(message.chat.id, status_msg.message_id)
 
             except Exception as err:
@@ -141,7 +138,6 @@ def setup(bot):
 
     # ബോട്ട് ഓൺ ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് പ്രോസസ്സ് സ്റ്റാർട്ട് ചെയ്യുന്നു
     threading.Thread(target=process_queue, daemon=True).start()
-
 
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
     def ultimate_hd_search(message):
