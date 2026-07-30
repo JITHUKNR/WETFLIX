@@ -6,36 +6,20 @@ import queue
 import requests
 import yt_dlp
 import random
-import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram import Client
 
-# ⚠️ ഉറപ്പായും വർക്ക് ചെയ്യുന്ന സ്റ്റാൻഡേർഡ് ക്യൂ ⚠️
+# സുരക്ഷിതമായ ക്യൂ സിസ്റ്റം
 download_queue = queue.Queue()
 is_downloading = False
 
 def setup(bot):
-
-    # Render Environment-ൽ നിന്നും API വിവരങ്ങൾ എടുക്കുന്നു
-    API_ID_STR = os.environ.get("API_ID")
-    API_ID = int(API_ID_STR) if API_ID_STR else 0
-    API_HASH = os.environ.get("API_HASH", "")
     BOT_TOKEN = bot.token
 
-    if not API_ID or not API_HASH:
-        print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
-
-    # ⚠️ ബാക്ക്ഗ്രൗണ്ടിൽ മാത്രം പ്രവർത്തിക്കുന്ന സുരക്ഷിതമായ വർക്കർ ⚠️
+    # ബാക്ക്ഗ്രൗണ്ടിൽ വർക്ക് ചെയ്യുന്ന ക്യൂ സിസ്റ്റം
     def process_queue():
         global is_downloading
-        
-        # ഈ ത്രെഡിന് വേണ്ടി മാത്രം പുതിയൊരു ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കുന്നു (MainThread ക്രാഷ് ഒഴിവാക്കാൻ)
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         while True:
-            # ക്യൂവിൽ നിന്ന് അടുത്ത റിക്വസ്റ്റ് എടുക്കുന്നു
             task = download_queue.get()
             is_downloading = True
             
@@ -87,6 +71,7 @@ def setup(bot):
 
                 bot.edit_message_text(f"⏳ **Video found! Downloading Best Quality...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
+                # യാതൊരു ലിമിറ്റും ഇല്ലാതെ വീഡിയോ ഡൗൺലോഡ് ചെയ്യുന്നു
                 ydl_opts = {
                     'format': 'best', 
                     'outtmpl': filename,
@@ -95,48 +80,44 @@ def setup(bot):
                     'age_limit': 18
                 }
 
-                # യാതൊരു എററുമില്ലാതെ സിമ്പിൾ ആയി ഡൗൺലോഡ് ചെയ്യുന്നു
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(video_url, download=True)
                     title = info.get('title', 'HD 18+ Video')
-                    duration = info.get('duration', 0)
-                    width = info.get('width', 0)
-                    height = info.get('height', 0)
+                    
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Bypassing Limits)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This might take a while for large files)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-
-                # ⚠️ 50MB ലിമിറ്റ് ഇല്ലാതെ Pyrogram വഴി അപ്‌ലോഡ് ചെയ്യാൻ ⚠️
-                async def do_upload():
-                    async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
-                        await app.send_video(
-                            chat_id=message.chat.id,
-                            video=filename,
-                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot (HD)_",
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            supports_streaming=True
-                        )
-
-                # ടാസ്ക് എക്സിക്യൂട്ട് ചെയ്യുന്നു
-                loop.run_until_complete(do_upload())
-                bot.delete_message(message.chat.id, status_msg.message_id)
+                # ⚠️ ടെലഗ്രാമിന്റെ ലോക്കൽ API അല്ലെങ്കിൽ Requests ഉപയോഗിച്ച് വലിയ ഫയൽ അയക്കുന്നു ⚠️
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
+                with open(filename, 'rb') as video_file:
+                    files = {'video': video_file}
+                    data = {
+                        'chat_id': message.chat.id,
+                        'caption': f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_",
+                        'parse_mode': 'Markdown',
+                        'supports_streaming': 'true'
+                    }
+                    response = requests.post(url, data=data, files=files)
+                
+                # ഫയൽ അയച്ചുകഴിഞ്ഞാൽ മെസ്സേജ് ഡിലീറ്റ് ചെയ്യുന്നു
+                if response.status_code == 200:
+                    bot.delete_message(message.chat.id, status_msg.message_id)
+                else:
+                    raise Exception("Failed to upload via API")
 
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Download Failed!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed! (File might be too large for this server)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except:
-                    bot.send_message(message.chat.id, f"❌ **Download Failed!**\n\n`{error_str}`")
+                    pass
             finally:
                 if os.path.exists(filename):
                     os.remove(filename)
                 
-                # ഒരു ആളുടെ ടാസ്ക് പൂർത്തിയായി എന്ന് ക്യൂവിനെ അറിയിക്കുന്നു (അടുത്ത ആളിലേക്ക് പോകാൻ)
                 download_queue.task_done()
                 is_downloading = False
 
-    # ബോട്ട് ഓൺ ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് പ്രോസസ്സ് സ്റ്റാർട്ട് ചെയ്യുന്നു
+    # പ്ലഗിൻ ലോഡ് ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് പ്രോസസ്സ് സ്റ്റാർട്ട് ചെയ്യുന്നു
     threading.Thread(target=process_queue, daemon=True).start()
 
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
@@ -153,14 +134,12 @@ def setup(bot):
 
             query = parts[1].strip()
             
-            # വീഡിയോ ഡൗൺലോഡ് ചെയ്തുകൊണ്ടിരിക്കുകയാണെങ്കിൽ ക്യൂവിലേക്ക് മാറ്റുന്നു
             if is_downloading or not download_queue.empty():
                 position = download_queue.qsize() + 1
                 status_msg = bot.reply_to(message, f"⏳ **Added to Queue!**\n\nYou are in position #{position}.\nPlease wait, your video for **'{query}'** will start processing soon...", parse_mode='Markdown')
             else:
                 status_msg = bot.reply_to(message, f"🔎 Processing request for **'{query}'**...", parse_mode='Markdown')
 
-            # റിക്വസ്റ്റ് യാതൊരു പ്രശ്നവുമില്ലാതെ ക്യൂവിലേക്ക് ഇടുന്നു
             download_queue.put((message, query, status_msg))
 
         except Exception as e:
