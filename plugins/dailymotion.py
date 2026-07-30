@@ -9,7 +9,6 @@ import random
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ക്യൂ സിസ്റ്റം
 download_queue = queue.Queue()
 is_downloading = False
 
@@ -22,34 +21,34 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # 🌐 ഗൂഗിളിൽ/വെബിൽ നിന്ന് ഏത് സൈറ്റിൽ നിന്നായാലും വീഡിയോ തപ്പിയെടുക്കാനുള്ള ഫംഗ്ഷൻ
-    def get_video_url_from_web(query):
+    # Safe Search ഇല്ലാതെ നേരിട്ട് സെർച്ച് ചെയ്യാൻ
+    def get_video_url(query):
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        encoded_query = urllib.parse.quote(query)
+        links = []
         
-        # രീതി 1: DuckDuckGo വഴി വെബിൽ മൊത്തത്തിൽ സെർച്ച് ചെയ്യുന്നു
         try:
-            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query + ' video')}"
-            res = requests.get(search_url, headers=headers, timeout=10)
-            urls = re.findall(r'href="([^"]+)"', res.text)
+            r = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=5)
+            urls = re.findall(r'href="(/video\d+/[^"]+)"', r.text)
+            links.extend([f"https://www.xvideos.com{u}" for u in urls])
+        except: pass
+        
+        if not links:
+            try:
+                r = requests.get(f"https://www.xnxx.com/search/{encoded_query}", headers=headers, timeout=5)
+                urls = re.findall(r'href="(/video-[^"]+)"', r.text)
+                links.extend([f"https://www.xnxx.com{u}" for u in urls])
+            except: pass
             
-            # ലോകത്തുള്ള ഒട്ടുമിക്ക പോപ്പുലർ സൈറ്റുകളും ഇതിൽ സപ്പോർട്ട് ചെയ്യും
-            valid_domains = ['xvideos.com', 'xnxx.com', 'xhamster.com', 'pornhub.com', 'spankbang.com', 'eporner.com', 'hqporner.com', 'beeg.com', 'tnaflix.com', 'tube8.com']
-            for u in urls:
-                if 'uddg=' in u:
-                    u = urllib.parse.unquote(u.split('uddg=')[1].split('&')[0])
-                for domain in valid_domains:
-                    if domain in u and 'search' not in u and 'category' not in u:
-                        return u
-        except: pass
-        
-        # രീതി 2: മുകളിലത്തെ രീതി കിട്ടിയില്ലെങ്കിൽ നേരിട്ടുള്ള സെർച്ച് (Fallback)
-        try:
-            encoded_query = urllib.parse.quote(query)
-            resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=10)
-            links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
-            if links: return f"https://www.xvideos.com{random.choice(list(set(links))[:10])}"
-        except: pass
-        
+        if not links:
+            try:
+                r = requests.get(f"https://xhamster.com/search/{encoded_query}?sort=best", headers=headers, timeout=5)
+                urls = re.findall(r'href="(https://xhamster\.com/videos/[^"]+)"', r.text)
+                links.extend([u for u in urls if '/videos/' in u and 'user' not in u])
+            except: pass
+
+        if links:
+            return random.choice(list(set(links))[:15])
         return None
 
     def process_queue():
@@ -62,24 +61,21 @@ def setup(bot):
             filename = f"vid_{message.chat.id}.mp4"
             
             try:
-                bot.edit_message_text(f"🔎 **Searching the web** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"🔎 **Searching** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
-                # വെബിൽ നിന്ന് ലിങ്ക് എടുക്കുന്നു
-                video_url = get_video_url_from_web(query)
+                video_url = get_video_url(query)
 
                 if not video_url:
-                    bot.edit_message_text(f"❌ No suitable videos found on the web for '{query}'.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                    download_queue.task_done()
-                    is_downloading = False
+                    bot.edit_message_text(f"❌ No suitable videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    # ⚠️ ഇവിടെ നിന്നും task_done ഒഴിവാക്കി (Error പരിഹരിച്ചു) ⚠️
                     continue
 
-                # എവിടുന്ന് കിട്ടി എന്ന സൈറ്റിന്റെ പേരും കാണിക്കും
                 domain_name = urllib.parse.urlparse(video_url).netloc
                 bot.edit_message_text(f"⏳ **Video found! Downloading (Max 150MB)...**\n🔗 Source: `{domain_name}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ 150MB സൈസ് ലിമിറ്റ് ⚠️
+                # താങ്കൾ പറഞ്ഞപോലെ 150MB വരെ ഉള്ള ഏത് വീഡിയോയും എടുക്കും
                 ydl_opts = {
-                    'format': 'best[ext=mp4][filesize<150M]/best[filesize<150M]',
+                    'format': 'best[ext=mp4][filesize<=150M]/best[filesize<=150M]',
                     'outtmpl': filename,
                     'quiet': True,
                     'no_warnings': True,
@@ -88,14 +84,13 @@ def setup(bot):
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(video_url, download=True)
-                    title = info.get('title', 'HD 18+ Video')
+                    title = info.get('title', 'HD Video')
                     duration = info.get('duration', 0)
                     width = info.get('width', 0)
                     height = info.get('height', 0)
 
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram for large file)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ MAINTHREAD എറർ ഒഴിവാക്കാൻ PYROGRAM ഉള്ളിലാക്കി വെച്ചിരിക്കുന്നു ⚠️
                 def run_pyrogram_upload():
                     import asyncio
                     from pyrogram import Client
@@ -118,7 +113,6 @@ def setup(bot):
                     loop.run_until_complete(upload())
                     loop.close()
 
-                # അപ്‌ലോഡ് മറ്റൊരു ത്രെഡിൽ ഓടിക്കുന്നു
                 upload_thread = threading.Thread(target=run_pyrogram_upload)
                 upload_thread.start()
                 upload_thread.join()
@@ -134,10 +128,10 @@ def setup(bot):
                 if os.path.exists(filename):
                     os.remove(filename)
                 
+                # ⚠️ ടാസ്ക് കഴിഞ്ഞതായി ക്യൂവിനെ അറിയിക്കുന്നത് ഇവിടെ മാത്രമായി ചുരുക്കി ⚠️
                 download_queue.task_done()
                 is_downloading = False
 
-    # പ്ലഗിൻ ലോഡ് ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് ക്യൂ സ്റ്റാർട്ട് ചെയ്യുന്നു
     threading.Thread(target=process_queue, daemon=True).start()
 
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
@@ -145,18 +139,14 @@ def setup(bot):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
-                bot.reply_to(
-                    message, 
-                    "🔥 **Web Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`\n\n💡 *Example:* `/search hot mallu`", 
-                    parse_mode='Markdown'
-                )
+                bot.reply_to(message, "🔥 **Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`", parse_mode='Markdown')
                 return
 
             query = parts[1].strip()
             
             if is_downloading or not download_queue.empty():
                 position = download_queue.qsize() + 1
-                status_msg = bot.reply_to(message, f"⏳ **Added to Queue!**\n\nYou are in position #{position}.\nPlease wait, your video for **'{query}'** will start processing soon...", parse_mode='Markdown')
+                status_msg = bot.reply_to(message, f"⏳ **Added to Queue!**\n\nYou are in position #{position}.\nPlease wait...", parse_mode='Markdown')
             else:
                 status_msg = bot.reply_to(message, f"🔎 Processing request for **'{query}'**...", parse_mode='Markdown')
 
