@@ -21,35 +21,51 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # Safe Search ഇല്ലാതെ നേരിട്ട് സെർച്ച് ചെയ്യാൻ
-    def get_video_url(query):
+    # 🌐 വെബിൽ നിന്നും ഗൂഗിളിൽ നിന്നും ഏത് സൈറ്റിലെ വീഡിയോയും എടുക്കാൻ
+    def get_video_urls_from_web(query):
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        encoded_query = urllib.parse.quote(query)
-        links = []
+        all_links = []
         
+        # ഗൂഗിളിൽ നിന്നുള്ള സെർച്ച് (DuckDuckGo വഴി)
         try:
-            r = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=5)
-            urls = re.findall(r'href="(/video\d+/[^"]+)"', r.text)
-            links.extend([f"https://www.xvideos.com{u}" for u in urls])
+            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query + ' video')}"
+            res = requests.get(search_url, headers=headers, timeout=10)
+            urls = re.findall(r'href="([^"]+)"', res.text)
+            
+            for u in urls:
+                if 'uddg=' in u:
+                    u = urllib.parse.unquote(u.split('uddg=')[1].split('&')[0])
+                if ('xvideos.com' in u or 'xnxx.com' in u or 'xhamster.com' in u or 'pornhub.com' in u) and 'search' not in u and 'category' not in u:
+                    all_links.append(u)
         except: pass
         
-        if not links:
-            try:
-                r = requests.get(f"https://www.xnxx.com/search/{encoded_query}", headers=headers, timeout=5)
-                urls = re.findall(r'href="(/video-[^"]+)"', r.text)
-                links.extend([f"https://www.xnxx.com{u}" for u in urls])
-            except: pass
-            
-        if not links:
-            try:
-                r = requests.get(f"https://xhamster.com/search/{encoded_query}?sort=best", headers=headers, timeout=5)
-                urls = re.findall(r'href="(https://xhamster\.com/videos/[^"]+)"', r.text)
-                links.extend([u for u in urls if '/videos/' in u and 'user' not in u])
-            except: pass
+        # നേരിട്ടുള്ള സെർച്ച് (Fallback)
+        try:
+            encoded_query = urllib.parse.quote(query)
+            resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=10)
+            links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
+            all_links.extend([f"https://www.xvideos.com{u}" for u in links])
+        except: pass
+        
+        if all_links:
+            # കിട്ടിയ ലിങ്കുകൾ ഷഫിൾ ചെയ്ത് കൊടുക്കുന്നു
+            links_list = list(set(all_links))
+            random.shuffle(links_list)
+            return links_list
+        return []
 
-        if links:
-            return random.choice(list(set(links))[:15])
-        return None
+    # ⚠️ 150MB ചെക്ക് ചെയ്യാനുള്ള കസ്റ്റം ഡൗൺലോഡ് ഹുക്ക് ⚠️
+    class MaxSizeException(Exception):
+        pass
+
+    def check_size_hook(d):
+        if d['status'] == 'downloading':
+            # ഡൗൺലോഡ് ചെയ്തുകൊണ്ടിരിക്കുമ്പോൾ സൈസ് 150MB കഴിഞ്ഞാൽ അപ്പോൾ തന്നെ നിർത്തും
+            if d.get('downloaded_bytes', 0) > 150 * 1024 * 1024:
+                raise MaxSizeException("Video exceeded 150MB limit.")
+            # മുൻകൂട്ടി സൈസ് അറിയാമെങ്കിൽ അതും ചെക്ക് ചെയ്യും
+            if d.get('total_bytes', 0) > 150 * 1024 * 1024:
+                raise MaxSizeException("Video exceeded 150MB limit.")
 
     def process_queue():
         global is_downloading
@@ -61,36 +77,64 @@ def setup(bot):
             filename = f"vid_{message.chat.id}.mp4"
             
             try:
-                bot.edit_message_text(f"🔎 **Searching** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"🔎 **Searching the web** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
-                video_url = get_video_url(query)
+                video_urls = get_video_urls_from_web(query)
 
-                if not video_url:
-                    bot.edit_message_text(f"❌ No suitable videos found for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                    # ⚠️ ഇവിടെ നിന്നും task_done ഒഴിവാക്കി (Error പരിഹരിച്ചു) ⚠️
+                if not video_urls:
+                    bot.edit_message_text(f"❌ No suitable videos found on the web for '{query}'.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    download_queue.task_done()
+                    is_downloading = False
                     continue
 
-                domain_name = urllib.parse.urlparse(video_url).netloc
-                bot.edit_message_text(f"⏳ **Video found! Downloading (Max 150MB)...**\n🔗 Source: `{domain_name}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                download_success = False
+                title = "HD Video"
+                duration = 0
+                width = 0
+                height = 0
 
-                # താങ്കൾ പറഞ്ഞപോലെ 150MB വരെ ഉള്ള ഏത് വീഡിയോയും എടുക്കും
-                ydl_opts = {
-                    'format': 'best[ext=mp4][filesize<=150M]/best[filesize<=150M]',
-                    'outtmpl': filename,
-                    'quiet': True,
-                    'no_warnings': True,
-                    'age_limit': 18
-                }
+                # ⚠️ കിട്ടിയ ലിങ്കുകളിൽ 150MB-ക്ക് താഴെയുള്ള ഒരെണ്ണം കിട്ടുന്നത് വരെ പരീക്ഷിക്കും ⚠️
+                for video_url in video_urls[:5]: # പരമാവധി 5 വീഡിയോകൾ ട്രൈ ചെയ്യും
+                    domain_name = urllib.parse.urlparse(video_url).netloc
+                    bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}` (Must be under 150MB)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(video_url, download=True)
-                    title = info.get('title', 'HD Video')
-                    duration = info.get('duration', 0)
-                    width = info.get('width', 0)
-                    height = info.get('height', 0)
+                    ydl_opts = {
+                        'format': 'best', # യാതൊരു ഫയൽസൈസ് ലിമിറ്റും ഇവിടെ വെക്കുന്നില്ല (എറർ വരാതിരിക്കാൻ)
+                        'outtmpl': filename,
+                        'quiet': True,
+                        'no_warnings': True,
+                        'age_limit': 18,
+                        'progress_hooks': [check_size_hook] # പകരം ഈ ഹുക്ക് വഴി സൈസ് ചെക്ക് ചെയ്യും
+                    }
+
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info = ydl.extract_info(video_url, download=True)
+                            title = info.get('title', 'HD Video')
+                            duration = info.get('duration', 0)
+                            width = info.get('width', 0)
+                            height = info.get('height', 0)
+                            download_success = True
+                            break # ഡൗൺലോഡ് വിജയിച്ചാൽ ലൂപ്പിൽ നിന്ന് പുറത്ത് വരും
+                    except MaxSizeException:
+                        # 150MB കഴിഞ്ഞാൽ ഈ എറർ വരും, അപ്പോൾ ആ ഫയൽ കളഞ്ഞിട്ട് അടുത്ത വീഡിയോ നോക്കും
+                        if os.path.exists(filename):
+                            os.remove(filename)
+                        continue
+                    except Exception as e:
+                        if os.path.exists(filename):
+                            os.remove(filename)
+                        continue
+
+                if not download_success:
+                    bot.edit_message_text(f"❌ **Download Failed!**\nAll found videos for '{query}' were larger than 150MB or unavailable.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    download_queue.task_done()
+                    is_downloading = False
+                    continue
 
                 bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
+                # Pyrogram വഴി ഫയൽ അയക്കുന്നു
                 def run_pyrogram_upload():
                     import asyncio
                     from pyrogram import Client
@@ -122,13 +166,12 @@ def setup(bot):
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Download Failed! (Might be larger than 150MB)**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Error occurred!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except: pass
             finally:
                 if os.path.exists(filename):
                     os.remove(filename)
                 
-                # ⚠️ ടാസ്ക് കഴിഞ്ഞതായി ക്യൂവിനെ അറിയിക്കുന്നത് ഇവിടെ മാത്രമായി ചുരുക്കി ⚠️
                 download_queue.task_done()
                 is_downloading = False
 
@@ -139,7 +182,7 @@ def setup(bot):
         try:
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
-                bot.reply_to(message, "🔥 **Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`", parse_mode='Markdown')
+                bot.reply_to(message, "🔥 **Web Video Downloader:**\n\n📖 *Usage:*\n`/search <keyword>`", parse_mode='Markdown')
                 return
 
             query = parts[1].strip()
