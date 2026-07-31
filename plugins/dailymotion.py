@@ -7,30 +7,14 @@ import requests
 import yt_dlp
 import random
 import time
-import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram import Client
 
 download_queue = queue.Queue()
 is_downloading = False
 
-# ⚠️ Pyrogram-ന് വേണ്ടി ഒരു സ്ഥിരമായ ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കുന്നു (ഇത് എറർ വരുന്നത് തടയും) ⚠️
-pyrogram_loop = asyncio.new_event_loop()
-def start_pyrogram_loop(loop):
-    asyncio.set_event_loop(loop)
-    loop.run_forever()
-
-threading.Thread(target=start_pyrogram_loop, args=(pyrogram_loop,), daemon=True).start()
-
 def setup(bot):
-    API_ID_STR = os.environ.get("API_ID")
-    API_ID = int(API_ID_STR) if API_ID_STR else 0
-    API_HASH = os.environ.get("API_HASH", "")
     BOT_TOKEN = bot.token
-
-    if not API_ID or not API_HASH:
-        print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
     # 🌐 യാതൊരുവിധ ഹാങ്ങിങ്ങും ഇല്ലാതെ നേരിട്ട് 3 വലിയ സൈറ്റുകളിൽ നിന്ന് വീഡിയോ എടുക്കുന്നു
     def get_video_urls(query):
@@ -101,10 +85,7 @@ def setup(bot):
 
                 download_success = False
                 title = "HD Video"
-                duration = 0
-                width = 0
-                height = 0
-
+                
                 for video_url in video_urls[:5]:
                     domain_name = urllib.parse.urlparse(video_url).netloc
                     bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}`...**\n(Looking for under 150MB)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
@@ -123,9 +104,6 @@ def setup(bot):
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info = ydl.extract_info(video_url, download=True)
                             title = info.get('title', 'HD Video')
-                            duration = info.get('duration', 0)
-                            width = info.get('width', 0)
-                            height = info.get('height', 0)
                             download_success = True
                             break 
                     except MaxSizeException:
@@ -141,31 +119,29 @@ def setup(bot):
                     is_downloading = False
                     continue
 
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (This may take a minute)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ മുൻപ് ഉണ്ടാക്കിവെച്ച സ്ഥിരമായ ലൂപ്പിലേക്ക് അപ്‌ലോഡ് ടാസ്ക് കൊടുക്കുന്നു (ഇതോടെ എറർ വരില്ല) ⚠️
-                async def do_upload():
-                    async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
-                        await app.send_video(
-                            chat_id=message.chat.id,
-                            video=filename,
-                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            supports_streaming=True
-                        )
-
-                # ടാസ്ക് റൺ ചെയ്യാൻ കാത്തിരിക്കുന്നു
-                future = asyncio.run_coroutine_threadsafe(do_upload(), pyrogram_loop)
-                future.result() # അപ്‌ലോഡ് തീരുന്നതുവരെ വെയിറ്റ് ചെയ്യും
+                # ⚠️ Pyrogram ഒഴിവാക്കി ടെലഗ്രാമിന്റെ ഒറിജിനൽ API വഴി തന്നെ വലിയ ഫയലുകൾ സ്ട്രീം ചെയ്ത് അയക്കുന്നു (റാം ക്രാഷ് ആവില്ല) ⚠️
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
+                with open(filename, 'rb') as video_file:
+                    files = {'video': video_file}
+                    data = {
+                        'chat_id': message.chat.id,
+                        'caption': f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX Bot_",
+                        'parse_mode': 'Markdown',
+                        'supports_streaming': 'true'
+                    }
+                    response = requests.post(url, data=data, files=files, timeout=300) # അപ്‌ലോഡ് ചെയ്യാൻ 5 മിനിറ്റ് വരെ സമയം കൊടുക്കുന്നു
                 
-                bot.delete_message(message.chat.id, status_msg.message_id)
+                if response.status_code == 200:
+                    bot.delete_message(message.chat.id, status_msg.message_id)
+                else:
+                    raise Exception("Failed to upload via Telegram API")
 
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Error occurred!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Upload Failed! (Server Timeout)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except: pass
             finally:
                 if os.path.exists(filename):
