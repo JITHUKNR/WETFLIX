@@ -7,6 +7,7 @@ import requests
 import yt_dlp
 import random
 import time
+import subprocess # ⚠️ പുതിയ വഴി (Subprocess)
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -86,10 +87,7 @@ def setup(bot):
 
                 download_success = False
                 title = "HD Video"
-                duration = 0
-                width = 0
-                height = 0
-
+                
                 for video_url in video_urls[:5]:
                     domain_name = urllib.parse.urlparse(video_url).netloc
                     
@@ -111,9 +109,6 @@ def setup(bot):
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info = ydl.extract_info(video_url, download=True)
                             title = info.get('title', 'HD Video')
-                            duration = info.get('duration', 0)
-                            width = info.get('width', 0)
-                            height = info.get('height', 0)
                             download_success = True
                             break 
                     except MaxSizeException:
@@ -135,35 +130,38 @@ def setup(bot):
                     bot.edit_message_text(f"📤 **Uploading {title[:30]}...**\n(This might take a minute, please wait)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except: pass
 
-                # ⚠️ PYROGRAM UPLOAD: എല്ലാ എററുകളും ഫിക്സ് ചെയ്ത് സേഫ് ആയി റൺ ചെയ്യുന്നു ⚠️
-                def do_pyrogram_upload():
-                    import asyncio
-                    from pyrogram import Client
-                    
-                    async def _upload():
-                        app = Client("wetflix_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
-                        await app.start()
-                        await app.send_video(
-                            chat_id=message.chat.id,
-                            video=filename,
-                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            supports_streaming=True
-                        )
-                        await app.stop()
+                caption = f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_"
 
-                    # ഈ ടാസ്കിന് വേണ്ടി പുതിയൊരു ലൂപ്പ് ഉണ്ടാക്കുന്നു
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(_upload())
-                    finally:
-                        loop.close()
+                # ⚠️ THE ULTIMATE FIX: പൂർണ്ണമായും പുതിയൊരു പൈത്തൺ സ്ക്രിപ്റ്റ് ഉണ്ടാക്കി അപ്‌ലോഡ് ചെയ്യുന്നു ⚠️
+                uploader_script = f"upload_{message.chat.id}.py"
+                script_content = """
+import asyncio
+import sys
+from pyrogram import Client
 
-                # അപ്‌ലോഡ് റൺ ചെയ്യുന്നു
-                do_pyrogram_upload()
+api_id = int(sys.argv[1])
+api_hash = sys.argv[2]
+bot_token = sys.argv[3]
+chat_id = int(sys.argv[4])
+filename = sys.argv[5]
+caption = sys.argv[6]
+
+async def main():
+    try:
+        app = Client("wetflix_session", api_id=api_id, api_hash=api_hash, bot_token=bot_token, in_memory=True)
+        async with app:
+            await app.send_video(chat_id=chat_id, video=filename, caption=caption, supports_streaming=True)
+    except Exception as e:
+        print(f"Error: {e}")
+
+asyncio.run(main())
+"""
+                # അപ്‌ലോഡ് ചെയ്യാനുള്ള കോഡ് ഒരു ഫയലായി സേവ് ചെയ്യുന്നു
+                with open(uploader_script, "w", encoding="utf-8") as f:
+                    f.write(script_content)
+
+                # ആ ഫയൽ റൺ ചെയ്യുന്നു (ഇതിന് നിലവിലെ Thread-മായി യാതൊരു ബന്ധവുമില്ല, അതുകൊണ്ട് Error വരില്ല!)
+                subprocess.run(["python", uploader_script, str(API_ID), API_HASH, BOT_TOKEN, str(message.chat.id), filename, caption])
                 
                 try:
                     bot.delete_message(message.chat.id, status_msg.message_id)
@@ -172,11 +170,14 @@ def setup(bot):
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.send_message(message.chat.id, f"❌ **Upload Failed!**\n\n`{error_str}`", parse_mode='Markdown')
+                    bot.send_message(message.chat.id, f"❌ **Error!**\n\n`{error_str}`", parse_mode='Markdown')
                 except: pass
             finally:
+                # എല്ലാം കഴിഞ്ഞ ശേഷം ഫയലുകൾ ഡിലീറ്റ് ചെയ്യുന്നു
                 if os.path.exists(filename):
                     os.remove(filename)
+                if 'uploader_script' in locals() and os.path.exists(uploader_script):
+                    os.remove(uploader_script)
                 
                 download_queue.task_done()
                 is_downloading = False
