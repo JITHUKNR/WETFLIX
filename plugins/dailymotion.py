@@ -2,8 +2,8 @@ import os
 import re
 import yt_dlp
 import time
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import Client
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
     API_ID_STR = os.environ.get("API_ID")
@@ -11,7 +11,7 @@ def setup(bot):
     API_HASH = os.environ.get("API_HASH", "")
     BOT_TOKEN = bot.token
 
-    # ⚠️ നിങ്ങളുടെ ടെലഗ്രാം ചാനലിന്റെ യൂസർനെയിം ഇവിടെ നൽകിയിരിക്കുന്നു
+    # താങ്കളുടെ ടെലഗ്രാം ചാനലിന്റെ യൂസർനെയിം
     CHANNEL_USERNAME = "@aaawetflix"
 
     # ടെലഗ്രാം ചാനലിൽ നിന്ന് ലിങ്കുകൾ ഓട്ടോമാറ്റിക് ആയി എടുക്കുന്ന ഫംഗ്ഷൻ
@@ -24,7 +24,7 @@ def setup(bot):
             with Client("wetflix_channel_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
                 messages = app.get_chat_history(CHANNEL_USERNAME, limit=50)
                 
-                # ഇതിനകം അയച്ച ലിങ്കുകൾ സേവ് ചെയ്തു വെക്കുന്ന ഫയൽ (ഡപ്ലിക്കേറ്റ് ഒഴിവാക്കാൻ)
+                # ഇതിനകം അയച്ച ലിങ്കുകൾ സേവ് ചെയ്തു വെക്കുന്ന ഫയൽ
                 sent_file = "sent_links.txt"
                 sent_links = set()
                 if os.path.exists(sent_file):
@@ -53,10 +53,9 @@ def setup(bot):
             if d.get('downloaded_bytes', 0) > 45 * 1024 * 1024:
                 raise MaxSizeException("Exceeded 45MB limit.")
 
-    # യൂസർ '📂 Local' ബട്ടൺ അമർത്തുമ്പോൾ ഇത് വർക്ക് ചെയ്യും
-    @bot.callback_query_handler(func=lambda call: call.data == "local_click")
-    def handle_local_button(call):
-        message = call.message
+    # ⚠️ ബട്ടണിന് പകരം കമാൻഡ് വഴി പ്രവർത്തിക്കുന്നു ⚠️
+    @bot.message_handler(commands=['local'])
+    def fetch_local_video(message):
         status_msg = bot.send_message(message.chat.id, "📂 **Checking your Telegram channel (@aaawetflix) for links...**", parse_mode='Markdown')
         
         filename = f"local_{message.chat.id}_{int(time.time())}.mp4"
@@ -107,16 +106,3 @@ def setup(bot):
         finally:
             if os.path.exists(filename):
                 os.remove(filename)
-
-    # യൂസർ `/start` അടിക്കുമ്പോൾ '📂 Local' ബട്ടൺ കാണിക്കുന്ന രീതിയിൽ
-    @bot.message_handler(commands=['start'])
-    def send_welcome(message):
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("📂 Local", callback_data="local_click"))
-        
-        bot.send_message(
-            message.chat.id,
-            f"⚡ **Welcome to WETFLIX Bot, {message.from_user.first_name}!**\n\n👇 Click the **Local** button to fetch videos directly from your channel (@aaawetflix):",
-            reply_markup=markup,
-            parse_mode='Markdown'
-        )
