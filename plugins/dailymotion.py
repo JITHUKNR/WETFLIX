@@ -7,11 +7,21 @@ import requests
 import yt_dlp
 import random
 import time
+import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client
 
 download_queue = queue.Queue()
 is_downloading = False
+
+# ⚠️ Pyrogram-ന് വേണ്ടി ഒരു സ്ഥിരമായ ഇവന്റ് ലൂപ്പ് ഉണ്ടാക്കുന്നു (ഇത് എറർ വരുന്നത് തടയും) ⚠️
+pyrogram_loop = asyncio.new_event_loop()
+def start_pyrogram_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+threading.Thread(target=start_pyrogram_loop, args=(pyrogram_loop,), daemon=True).start()
 
 def setup(bot):
     API_ID_STR = os.environ.get("API_ID")
@@ -55,11 +65,11 @@ def setup(bot):
 
         if all_links:
             links_list = list(set(all_links))
-            random.shuffle(links_list) # കിട്ടിയ വീഡിയോകൾ മിക്സ് ചെയ്യുന്നു
+            random.shuffle(links_list) 
             return links_list
         return []
 
-    # ⚠️ 150MB ചെക്ക് ചെയ്യാൻ വേണ്ടി മാത്രമുള്ള സിസ്റ്റം (ഇതുള്ളത് കൊണ്ട് Format Error വരില്ല)
+    # ⚠️ 150MB ചെക്ക് ചെയ്യാൻ വേണ്ടി മാത്രമുള്ള സിസ്റ്റം
     class MaxSizeException(Exception): pass
 
     def check_size_hook(d):
@@ -76,7 +86,6 @@ def setup(bot):
             is_downloading = True
             
             message, query, status_msg = task
-            # ഒരേ സമയം ഒന്നിലധികം ഫയലുകൾ വന്നാൽ കുഴപ്പമാവാതിരിക്കാൻ പേര് മാറ്റുന്നു
             filename = f"vid_{message.chat.id}_{int(time.time())}.mp4"
             
             try:
@@ -96,7 +105,6 @@ def setup(bot):
                 width = 0
                 height = 0
 
-                # ⚠️ കിട്ടിയതിൽ നിന്നും 150MB-ക്ക് താഴെയുള്ള ഒരെണ്ണം കിട്ടുന്നത് വരെ പരീക്ഷിക്കും
                 for video_url in video_urls[:5]:
                     domain_name = urllib.parse.urlparse(video_url).netloc
                     bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}`...**\n(Looking for under 150MB)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
@@ -107,7 +115,7 @@ def setup(bot):
                         'quiet': True,
                         'no_warnings': True,
                         'age_limit': 18,
-                        'socket_timeout': 15, # ⚠️ ബോട്ട് ഹാങ് ആവാതിരിക്കാൻ വെച്ച ടൈംഔട്ട്
+                        'socket_timeout': 15,
                         'progress_hooks': [check_size_hook]
                     }
 
@@ -135,31 +143,22 @@ def setup(bot):
 
                 bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                def run_pyrogram_upload():
-                    import asyncio
-                    from pyrogram import Client
-                    
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    
-                    async def upload():
-                        async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
-                            await app.send_video(
-                                chat_id=message.chat.id,
-                                video=filename,
-                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
-                                duration=duration,
-                                width=width,
-                                height=height,
-                                supports_streaming=True
-                            )
-                            
-                    loop.run_until_complete(upload())
-                    loop.close()
+                # ⚠️ മുൻപ് ഉണ്ടാക്കിവെച്ച സ്ഥിരമായ ലൂപ്പിലേക്ക് അപ്‌ലോഡ് ടാസ്ക് കൊടുക്കുന്നു (ഇതോടെ എറർ വരില്ല) ⚠️
+                async def do_upload():
+                    async with Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
+                        await app.send_video(
+                            chat_id=message.chat.id,
+                            video=filename,
+                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
+                            duration=duration,
+                            width=width,
+                            height=height,
+                            supports_streaming=True
+                        )
 
-                upload_thread = threading.Thread(target=run_pyrogram_upload)
-                upload_thread.start()
-                upload_thread.join()
+                # ടാസ്ക് റൺ ചെയ്യാൻ കാത്തിരിക്കുന്നു
+                future = asyncio.run_coroutine_threadsafe(do_upload(), pyrogram_loop)
+                future.result() # അപ്‌ലോഡ് തീരുന്നതുവരെ വെയിറ്റ് ചെയ്യും
                 
                 bot.delete_message(message.chat.id, status_msg.message_id)
 
