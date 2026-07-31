@@ -1,45 +1,48 @@
 import requests
 import random
+import urllib.parse
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
     
     # റെഡ്ഡിറ്റിൽ നിന്നും വീഡിയോ എടുക്കുന്ന ഫംഗ്ഷൻ
     def get_reddit_video(query):
-        # റെഡ്ഡിറ്റ് നമ്മളെ ബ്ലോക്ക് ചെയ്യാതിരിക്കാൻ ഒരു കസ്റ്റം User-Agent വെക്കുന്നു
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
-        # റെഡ്ഡിറ്റിലെ പോപ്പുലർ ആയ NSFW സബ്-റെഡ്ഡിറ്റുകൾ (ഇവയിൽ നിന്നാണ് സെർച്ച് ചെയ്യുക)
-        subreddits = ["nsfw", "porn_gifs", "NSFW_GIF", "60fpsporn", "NSFW_HTML5"]
-        selected_sub = random.choice(subreddits)
-        
-        # സെർച്ച് ചെയ്യാനുള്ള റെഡ്ഡിറ്റ് API ലിങ്ക് (JSON ഫോർമാറ്റിൽ)
-        search_url = f"https://www.reddit.com/r/{selected_sub}/search.json?q={query}&restrict_sr=on&sort=relevance&t=all"
+        encoded_query = urllib.parse.quote(query)
+        # ⚠️ ഏറ്റവും പുതിയ മാറ്റം: പ്രത്യേക ഗ്രൂപ്പുകൾ ഒഴിവാക്കി റെഡ്ഡിറ്റിൽ മുഴുവനായി തിരയുന്നു (include_over_18=on) ⚠️
+        search_url = f"https://www.reddit.com/search.json?q={encoded_query}&include_over_18=on&sort=relevance&t=all"
         
         try:
             response = requests.get(search_url, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                posts = data['data']['children']
+                # കിട്ടിയ റിസൾട്ടുകൾ എടുക്കുന്നു
+                posts = data.get('data', {}).get('children', [])
                 
                 valid_videos = []
                 for post in posts:
                     post_data = post['data']
-                    # പോസ്റ്റിൽ വീഡിയോ ഉണ്ടോ എന്ന് ചെക്ക് ചെയ്യുന്നു
-                    if post_data.get('is_video') or post_data.get('url', '').endswith(('.mp4', '.gifv')):
-                        
-                        video_url = post_data.get('url')
-                        # Reddit-ന്റെ സ്വന്തം വീഡിയോ പ്ലെയർ ആണെങ്കിൽ അതിലെ ലിങ്ക് എടുക്കുന്നു
-                        if 'v.redd.it' in video_url and 'secure_media' in post_data and post_data['secure_media'] and 'reddit_video' in post_data['secure_media']:
+                    
+                    # 1. റെഡ്ഡിറ്റിൽ നേരിട്ട് അപ്‌ലോഡ് ചെയ്ത വീഡിയോകൾ (v.redd.it)
+                    if post_data.get('is_video'):
+                        if 'secure_media' in post_data and post_data['secure_media'] and 'reddit_video' in post_data['secure_media']:
                             video_url = post_data['secure_media']['reddit_video']['fallback_url']
-                        
-                        title = post_data.get('title', 'Reddit Video')
-                        valid_videos.append({'url': video_url, 'title': title})
+                            title = post_data.get('title', 'Reddit Video')
+                            valid_videos.append({'url': video_url, 'title': title})
+                            
+                    # 2. മറ്റ് ഡയറക്റ്റ് ലിങ്കുകൾ (.mp4 അല്ലെങ്കിൽ .gifv)
+                    elif 'url' in post_data:
+                        url = post_data['url']
+                        if url.endswith(('.mp4', '.gifv')):
+                            url = url.replace('.gifv', '.mp4')
+                            title = post_data.get('title', 'Reddit Video')
+                            valid_videos.append({'url': url, 'title': title})
                 
                 if valid_videos:
-                    # കിട്ടിയ വീഡിയോകളിൽ നിന്നും ഒരെണ്ണം തിരഞ്ഞെടുക്കുന്നു
+                    # കിട്ടിയ വീഡിയോകളിൽ നിന്നും ഒരെണ്ണം റാൻഡം ആയി എടുക്കുന്നു
                     return random.choice(valid_videos)
         except Exception as e:
             print(f"Reddit Search Error: {e}")
@@ -69,8 +72,7 @@ def setup(bot):
 
             bot.edit_message_text(f"⏳ **Video found! Sending...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-            # ⚠️ ഡൗൺലോഡ് ചെയ്യുന്നില്ല! പകരം റെഡ്ഡിറ്റ് ലിങ്ക് നേരിട്ട് ടെലഗ്രാമിന് നൽകുന്നു ⚠️
-            # ടെലഗ്രാം സ്വന്തമായി ആ ലിങ്കിൽ നിന്ന് വീഡിയോ പ്ലേ ചെയ്യും (സെർവറിന് യാതൊരു ലോഡുമില്ല!)
+            # ⚠️ ഡൗൺലോഡ് ചെയ്യാതെ റെഡ്ഡിറ്റ് ലിങ്ക് നേരിട്ട് ടെലഗ്രാമിന് നൽകുന്നു ⚠️
             bot.send_video(
                 chat_id=message.chat.id,
                 video=video_url,
@@ -78,7 +80,10 @@ def setup(bot):
                 parse_mode='Markdown'
             )
             
+            # വീഡിയോ അയച്ചു കഴിഞ്ഞാൽ ആ status മെസ്സേജ് ഡിലീറ്റ് ചെയ്യും
             bot.delete_message(message.chat.id, status_msg.message_id)
 
         except Exception as e:
-            bot.reply_to(message, f"❌ Error: `{str(e)[:100]}`")
+            try:
+                bot.edit_message_text(f"❌ Error sending video. Telegram couldn't process the video link.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+            except: pass
