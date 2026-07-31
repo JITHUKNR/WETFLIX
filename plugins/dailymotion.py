@@ -7,33 +7,31 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # താങ്കളുടെ ചാനലിന്റെ പേര്
     CHANNEL_USERNAME = "aaawetflix"
 
     def get_link_from_channel():
         try:
-            # ടെലഗ്രാം വെബ് വഴി പബ്ലിക് ചാനൽ വായിക്കുന്നു
             url = f"https://t.me/s/{CHANNEL_USERNAME}"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            # Cloudflare-നെ പറ്റിക്കാൻ ഒറിജിനൽ ബ്രൗസർ ഹെഡറുകൾ നൽകുന്നു
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5"
+            }
             r = requests.get(url, headers=headers)
             
-            # ⚠️ ഏത് വെബ്സൈറ്റിന്റെ ലിങ്ക് ആയാലും (http/https) അത് എടുക്കാൻ പറയുന്നു ⚠️
             urls = re.findall(r'(https?://[^\s"\'<>]+)', r.text)
             
             if not urls:
                 return None
                 
-            # വെബ്സൈറ്റിന്റെ പേര് മാത്രമുള്ള ലിങ്കുകളും അനാവശ്യ ലിങ്കുകളും ഒഴിവാക്കുന്നു
             valid_urls = []
             for u in urls:
-                # ടെലഗ്രാമിന്റെ സ്വന്തം ലിങ്കുകളോ, വെറും .com മാത്രമുള്ള ലിങ്കുകളോ ഒഴിവാക്കുന്നു
                 if 't.me' not in u and 'telegram.org' not in u and len(u) > 25:
-                    # iframe കോഡിൽ നിന്നുള്ള ലിങ്ക് ആണെങ്കിൽ അതെടുക്കുന്നു
                     if 'embed' in u or '/video/' in u or '/videos/' in u or 'xhaccess' in u or 'txnhh' in u:
                         valid_urls.append(u)
             
             if not valid_urls:
-                # മുകളിലെ കണ്ടീഷൻ വർക്ക് ആയില്ലെങ്കിൽ കിട്ടിയ വലിയ ലിങ്കുകൾ എല്ലാം എടുക്കുന്നു
                 valid_urls = [u for u in urls if 't.me' not in u and len(u) > 20]
                 
             if not valid_urls:
@@ -77,15 +75,24 @@ def setup(bot):
                 bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some video links in your channel.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 return
 
-            bot.edit_message_text(f"⏳ **Downloading video...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+            bot.edit_message_text(f"⏳ **Downloading video...**\n🔗 `{video_url}`\n*(Bypassing Cloudflare...)*", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
+            # ⚠️ Cloudflare ബ്ലോക്ക് മറികടക്കാനുള്ള പ്രത്യേക yt-dlp സെറ്റിംഗ്സ് ⚠️
             ydl_opts = {
                 'format': 'best[height<=480]/worst', 
                 'outtmpl': filename,
                 'quiet': True,
                 'no_warnings': True,
                 'age_limit': 18,
-                'socket_timeout': 15,
+                'socket_timeout': 30, # സമയം കൂട്ടി നൽകുന്നു
+                'retries': 5, # ബ്ലോക്ക് ആയാലും 5 തവണ വീണ്ടും ശ്രമിക്കും
+                'extractor_args': {'generic': {'impersonate': 'chrome'}}, # ഒറിജിനൽ ക്രോം ആണെന്ന് തെറ്റിദ്ധരിപ്പിക്കുന്നു
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Sec-Fetch-Mode': 'navigate'
+                },
                 'progress_hooks': [check_size_hook]
             }
 
@@ -111,7 +118,7 @@ def setup(bot):
             bot.edit_message_text("❌ The video from this link was larger than 45MB. Skipped to next!", message.chat.id, status_msg.message_id)
         except Exception as err:
             try:
-                bot.edit_message_text(f"❌ Error downloading link: `{str(err)[:80]}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"❌ Error downloading link: `{str(err)[:80]}`\n\n*(Cloudflare Blocked or Invalid Link)*", message.chat.id, status_msg.message_id, parse_mode='Markdown')
             except: pass
         finally:
             if os.path.exists(filename):
