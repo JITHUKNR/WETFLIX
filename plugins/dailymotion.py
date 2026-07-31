@@ -63,7 +63,7 @@ def setup(bot):
             
         return None
 
-        def split_video(input_file, chat_id):
+    def split_video(input_file, chat_id):
         split_prefix = f"split_{chat_id}_{int(time.time())}"
         try:
             # ⚠️ സമയം വെച്ച് മുറിക്കുന്നത് മാറ്റി, 48MB സൈസ് വെച്ച് കൃത്യമായി മുറിക്കുന്നു ⚠️
