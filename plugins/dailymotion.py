@@ -7,10 +7,8 @@ import requests
 import yt_dlp
 import random
 import time
-import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-# ⚠️ കോഡിന്റെ മുകളിൽ നിന്നും Pyrogram പൂർണ്ണമായും ഒഴിവാക്കി (എറർ വരാതിരിക്കാൻ)
 
 download_queue = queue.Queue()
 is_downloading = False
@@ -24,7 +22,7 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # 🌐 വെബിൽ നിന്ന് വീഡിയോ എടുക്കുന്നു
+    # 🌐 യാതൊരുവിധ ഹാങ്ങിങ്ങും ഇല്ലാതെ നേരിട്ട് സൈറ്റുകളിൽ നിന്ന് വീഡിയോ എടുക്കുന്നു
     def get_video_urls(query):
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36"}
         encoded = urllib.parse.quote(query)
@@ -130,35 +128,32 @@ def setup(bot):
                     is_downloading = False
                     continue
 
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Bypassing 50MB Limit)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Bypassing Limits)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # ⚠️ PYROGRAM UPLOAD (യാതൊരുവിധ എററും വരാത്ത രീതിയിൽ) ⚠️
-                def run_pyrogram():
-                    from pyrogram import Client # ഇവിടെ വെച്ച് മാത്രം ഇമ്പോർട്ട് ചെയ്യുന്നു
+                # ⚠️ PYROGRAM UPLOAD - യാതൊരുവിധ എററും വരാത്ത പുതിയ സിസ്റ്റം ⚠️
+                def do_pyrogram_upload():
                     import asyncio
+                    from pyrogram import Client
                     
-                    async def upload():
-                        app = Client("wetflix_pyro_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
-                        await app.start()
-                        await app.send_video(
-                            chat_id=message.chat.id,
-                            video=filename,
-                            caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
-                            duration=duration,
-                            width=width,
-                            height=height,
-                            supports_streaming=True
-                        )
-                        await app.stop()
+                    async def main():
+                        # ഇവന്റ് ലൂപ്പിനുള്ളിൽ വെച്ച് മാത്രം Pyrogram വിളിക്കുന്നു
+                        app = Client("wetflix_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
+                        async with app:
+                            await app.send_video(
+                                chat_id=message.chat.id,
+                                video=filename,
+                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
+                                duration=duration,
+                                width=width,
+                                height=height,
+                                supports_streaming=True
+                            )
+                    
+                    # asyncio.run() ഉപയോഗിക്കുന്നത് വഴി പഴയ 'no current event loop' എറർ ഇനി വരില്ല!
+                    asyncio.run(main())
 
-                    # ഈ വർക്കിന് മാത്രമായി പുതിയൊരു ലൂപ്പ്
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(upload())
-                    loop.close()
-
-                # അപ്‌ലോഡ് റൺ ചെയ്യുന്നു
-                run_pyrogram()
+                # അപ്‌ലോഡ് ഫംഗ്ഷൻ റൺ ചെയ്യുന്നു
+                do_pyrogram_upload()
                 
                 bot.delete_message(message.chat.id, status_msg.message_id)
 
