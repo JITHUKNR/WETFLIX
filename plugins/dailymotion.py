@@ -2,50 +2,47 @@ import os
 import re
 import yt_dlp
 import time
-from pyrogram import Client
+import requests
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
-    API_ID_STR = os.environ.get("API_ID")
-    API_ID = int(API_ID_STR) if API_ID_STR else 0
-    API_HASH = os.environ.get("API_HASH", "")
-    BOT_TOKEN = bot.token
 
-    # താങ്കളുടെ ടെലഗ്രാം ചാനലിന്റെ യൂസർനെയിം
-    CHANNEL_USERNAME = "@aaawetflix"
+    # ⚠️ യാതൊരുവിധ API യുമില്ലാതെ വളരെ ലളിതമായി ചാനൽ വായിക്കുന്നു ⚠️
+    CHANNEL_USERNAME = "aaawetflix" # @ ഇല്ലാതെ പേര് മാത്രം
 
-    # ടെലഗ്രാം ചാനലിൽ നിന്ന് ലിങ്കുകൾ ഓട്ടോമാറ്റിക് ആയി എടുക്കുന്ന ഫംഗ്ഷൻ
     def get_link_from_channel():
-        if not API_ID or not API_HASH:
-            return None
-            
         try:
-            # Pyrogram വഴി ചാനൽ റീഡ് ചെയ്യുന്നു
-            with Client("wetflix_channel_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
-                messages = app.get_chat_history(CHANNEL_USERNAME, limit=50)
+            # പബ്ലിക് ചാനൽ ആയതുകൊണ്ട് ടെലഗ്രാം വെബ് വഴി നേരിട്ട് ലിങ്കുകൾ എടുക്കുന്നു
+            url = f"https://t.me/s/{CHANNEL_USERNAME}"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+            r = requests.get(url, headers=headers)
+            
+            # മെസ്സേജുകളിൽ നിന്ന് വീഡിയോ വെബ്സൈറ്റുകളുടെ ലിങ്കുകൾ മാത്രം തപ്പിയെടുക്കുന്നു
+            urls = re.findall(r'(https?://(?:www\.)?(?:xvideos\.com|xnxx\.com|pornhub\.com)[^\s"\'<>]+)', r.text)
+            
+            if not urls:
+                return None
                 
-                # ഇതിനകം അയച്ച ലിങ്കുകൾ സേവ് ചെയ്തു വെക്കുന്ന ഫയൽ
-                sent_file = "sent_links.txt"
-                sent_links = set()
-                if os.path.exists(sent_file):
-                    with open(sent_file, "r", encoding="utf-8") as sf:
-                        sent_links = set(line.strip() for line in sf.readlines())
-                
-                for message in messages:
-                    if message.text:
-                        # മെസ്സേജിൽ നിന്ന് ലിങ്കുകൾ കണ്ടുപിടിക്കുന്നു
-                        urls = re.findall(r'https?://[^\s]+', message.text)
-                        for url in urls:
-                            if url not in sent_links:
-                                with open(sent_file, "a", encoding="utf-8") as sf:
-                                    sf.write(url + "\n")
-                                return url
+            # ഏറ്റവും പുതിയ ലിങ്കുകൾ ആദ്യം കിട്ടാൻ വേണ്ടി ലിസ്റ്റ് തിരിച്ചിടുന്നു
+            urls.reverse()
+            
+            # അയച്ച ലിങ്കുകൾ സേവ് ചെയ്യാനുള്ള ഫയൽ (ഡ്യൂപ്ലിക്കേറ്റ് ഒഴിവാക്കാൻ)
+            sent_file = "sent_links.txt"
+            sent_links = set()
+            if os.path.exists(sent_file):
+                with open(sent_file, "r", encoding="utf-8") as sf:
+                    sent_links = set(line.strip() for line in sf.readlines())
+            
+            for u in urls:
+                if u not in sent_links:
+                    with open(sent_file, "a", encoding="utf-8") as sf:
+                        sf.write(u + "\n")
+                    return u
         except Exception as e:
-            print(f"Channel Read Error: {e}")
+            print(f"Scraping Error: {e}")
             
         return None
 
-    # സൈസ് 45MB-ൽ കൂടാൻ പാടില്ല എന്ന് ഉറപ്പാക്കാൻ
     class MaxSizeException(Exception): pass
 
     def check_size_hook(d):
@@ -53,10 +50,9 @@ def setup(bot):
             if d.get('downloaded_bytes', 0) > 45 * 1024 * 1024:
                 raise MaxSizeException("Exceeded 45MB limit.")
 
-    # ⚠️ ബട്ടണിന് പകരം കമാൻഡ് വഴി പ്രവർത്തിക്കുന്നു ⚠️
     @bot.message_handler(commands=['local'])
     def fetch_local_video(message):
-        status_msg = bot.send_message(message.chat.id, "📂 **Checking your Telegram channel (@aaawetflix) for links...**", parse_mode='Markdown')
+        status_msg = bot.send_message(message.chat.id, "📂 **Checking @aaawetflix for new links...**", parse_mode='Markdown')
         
         filename = f"local_{message.chat.id}_{int(time.time())}.mp4"
         
@@ -64,10 +60,10 @@ def setup(bot):
             video_url = get_link_from_channel()
             
             if not video_url:
-                bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some video links in your channel first.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some valid video links (xvideos/xnxx) in your channel.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 return
 
-            bot.edit_message_text(f"⏳ **Downloading video from channel link...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+            bot.edit_message_text(f"⏳ **Downloading video...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
             ydl_opts = {
                 'format': 'best[height<=480]/worst', 
