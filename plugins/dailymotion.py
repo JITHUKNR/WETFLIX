@@ -7,6 +7,7 @@ import requests
 import yt_dlp
 import random
 import time
+import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -22,7 +23,6 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # 🌐 യാതൊരുവിധ ഹാങ്ങിങ്ങും ഇല്ലാതെ നേരിട്ട് സൈറ്റുകളിൽ നിന്ന് വീഡിയോ എടുക്കുന്നു
     def get_video_urls(query):
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36"}
         encoded = urllib.parse.quote(query)
@@ -56,7 +56,6 @@ def setup(bot):
             return links_list
         return []
 
-    # ⚠️ 150MB ലൈവ് ആയി ചെക്ക് ചെയ്യാനുള്ള സിസ്റ്റം
     class MaxSizeException(Exception): pass
 
     def check_size_hook(d):
@@ -81,7 +80,7 @@ def setup(bot):
                 video_urls = get_video_urls(query)
 
                 if not video_urls:
-                    bot.edit_message_text(f"❌ No videos found for '{query}'. Try a different word.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ No videos found for '{query}'.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                     download_queue.task_done()
                     is_downloading = False
                     continue
@@ -94,7 +93,11 @@ def setup(bot):
 
                 for video_url in video_urls[:5]:
                     domain_name = urllib.parse.urlparse(video_url).netloc
-                    bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}`...**\n(Looking for under 150MB)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    
+                    # ⚠️ എറർ ഒഴിവാക്കാൻ ഒരേ മെസ്സേജ് വീണ്ടും എഡിറ്റ് ചെയ്യുന്നത് മാറ്റി ⚠️
+                    try:
+                        bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}`...**\n(Looking for under 150MB)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    except: pass # എറർ വന്നാലും കുഴപ്പമില്ലാതെ മുന്നോട്ട് പോകും
 
                     ydl_opts = {
                         'format': 'best',
@@ -128,15 +131,15 @@ def setup(bot):
                     is_downloading = False
                     continue
 
-                bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Bypassing Limits)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                try:
+                    bot.edit_message_text(f"📤 **Uploading {title[:30]}...**\n(This might take a minute, please wait)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                except: pass
 
-                # ⚠️ PYROGRAM UPLOAD - യാതൊരുവിധ എററും വരാത്ത പുതിയ സിസ്റ്റം ⚠️
                 def do_pyrogram_upload():
-                    import asyncio
                     from pyrogram import Client
+                    import asyncio
                     
                     async def main():
-                        # ഇവന്റ് ലൂപ്പിനുള്ളിൽ വെച്ച് മാത്രം Pyrogram വിളിക്കുന്നു
                         app = Client("wetflix_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
                         async with app:
                             await app.send_video(
@@ -149,18 +152,19 @@ def setup(bot):
                                 supports_streaming=True
                             )
                     
-                    # asyncio.run() ഉപയോഗിക്കുന്നത് വഴി പഴയ 'no current event loop' എറർ ഇനി വരില്ല!
                     asyncio.run(main())
 
-                # അപ്‌ലോഡ് ഫംഗ്ഷൻ റൺ ചെയ്യുന്നു
+                # അപ്‌ലോഡ് റൺ ചെയ്യുന്നു
                 do_pyrogram_upload()
                 
-                bot.delete_message(message.chat.id, status_msg.message_id)
+                try:
+                    bot.delete_message(message.chat.id, status_msg.message_id)
+                except: pass
 
             except Exception as err:
                 error_str = str(err)[:150]
                 try:
-                    bot.edit_message_text(f"❌ **Upload Failed!**\n\n`{error_str}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.send_message(message.chat.id, f"❌ **Upload Failed!**\n\n`{error_str}`", parse_mode='Markdown')
                 except: pass
             finally:
                 if os.path.exists(filename):
@@ -169,7 +173,6 @@ def setup(bot):
                 download_queue.task_done()
                 is_downloading = False
 
-    # പ്ലഗിൻ ലോഡ് ആകുമ്പോൾ തന്നെ ബാക്ക്ഗ്രൗണ്ട് ക്യൂ സ്റ്റാർട്ട് ചെയ്യുന്നു
     threading.Thread(target=process_queue, daemon=True).start()
 
     @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
