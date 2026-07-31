@@ -6,6 +6,7 @@ import queue
 import requests
 import yt_dlp
 import random
+import time
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -21,51 +22,52 @@ def setup(bot):
     if not API_ID or not API_HASH:
         print("⚠️ Warning: API_ID or API_HASH is missing in Environment Variables!")
 
-    # 🌐 വെബിൽ നിന്നും ഗൂഗിളിൽ നിന്നും ഏത് സൈറ്റിലെ വീഡിയോയും എടുക്കാൻ
-    def get_video_urls_from_web(query):
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    # 🌐 യാതൊരുവിധ ഹാങ്ങിങ്ങും ഇല്ലാതെ നേരിട്ട് 3 വലിയ സൈറ്റുകളിൽ നിന്ന് വീഡിയോ എടുക്കുന്നു
+    def get_video_urls(query):
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/114.0.0.0 Safari/537.36"}
+        encoded = urllib.parse.quote(query)
         all_links = []
         
-        # ഗൂഗിളിൽ നിന്നുള്ള സെർച്ച് (DuckDuckGo വഴി)
+        # 1. XVideos
         try:
-            search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query + ' video')}"
-            res = requests.get(search_url, headers=headers, timeout=10)
-            urls = re.findall(r'href="([^"]+)"', res.text)
-            
+            r = requests.get(f"https://www.xvideos.com/?k={encoded}", headers=headers, timeout=5)
+            urls = re.findall(r'href="(/video[^"]+)"', r.text)
             for u in urls:
-                if 'uddg=' in u:
-                    u = urllib.parse.unquote(u.split('uddg=')[1].split('&')[0])
-                if ('xvideos.com' in u or 'xnxx.com' in u or 'xhamster.com' in u or 'pornhub.com' in u) and 'search' not in u and 'category' not in u:
-                    all_links.append(u)
+                if 'tags' not in u and 'search' not in u and 'profiles' not in u:
+                    all_links.append(f"https://www.xvideos.com{u}")
         except: pass
         
-        # നേരിട്ടുള്ള സെർച്ച് (Fallback)
+        # 2. XNXX
         try:
-            encoded_query = urllib.parse.quote(query)
-            resp = requests.get(f"https://www.xvideos.com/?k={encoded_query}&sort=relevance", headers=headers, timeout=10)
-            links = re.findall(r'href="(/video\d+/[^"]+)"', resp.text)
-            all_links.extend([f"https://www.xvideos.com{u}" for u in links])
+            r = requests.get(f"https://www.xnxx.com/search/{encoded}", headers=headers, timeout=5)
+            urls = re.findall(r'href="(/video-[^"]+)"', r.text)
+            for u in urls:
+                all_links.append(f"https://www.xnxx.com{u}")
         except: pass
         
+        # 3. Pornhub
+        try:
+            r = requests.get(f"https://www.pornhub.com/video/search?search={encoded}", headers=headers, timeout=5)
+            urls = re.findall(r'href="(/view_video\.php\?viewkey=[^"]+)"', r.text)
+            for u in urls:
+                all_links.append(f"https://www.pornhub.com{u}")
+        except: pass
+
         if all_links:
-            # കിട്ടിയ ലിങ്കുകൾ ഷഫിൾ ചെയ്ത് കൊടുക്കുന്നു
             links_list = list(set(all_links))
-            random.shuffle(links_list)
+            random.shuffle(links_list) # കിട്ടിയ വീഡിയോകൾ മിക്സ് ചെയ്യുന്നു
             return links_list
         return []
 
-    # ⚠️ 150MB ചെക്ക് ചെയ്യാനുള്ള കസ്റ്റം ഡൗൺലോഡ് ഹുക്ക് ⚠️
-    class MaxSizeException(Exception):
-        pass
+    # ⚠️ 150MB ചെക്ക് ചെയ്യാൻ വേണ്ടി മാത്രമുള്ള സിസ്റ്റം (ഇതുള്ളത് കൊണ്ട് Format Error വരില്ല)
+    class MaxSizeException(Exception): pass
 
     def check_size_hook(d):
         if d['status'] == 'downloading':
-            # ഡൗൺലോഡ് ചെയ്തുകൊണ്ടിരിക്കുമ്പോൾ സൈസ് 150MB കഴിഞ്ഞാൽ അപ്പോൾ തന്നെ നിർത്തും
             if d.get('downloaded_bytes', 0) > 150 * 1024 * 1024:
-                raise MaxSizeException("Video exceeded 150MB limit.")
-            # മുൻകൂട്ടി സൈസ് അറിയാമെങ്കിൽ അതും ചെക്ക് ചെയ്യും
+                raise MaxSizeException("Exceeded 150MB limit.")
             if d.get('total_bytes', 0) > 150 * 1024 * 1024:
-                raise MaxSizeException("Video exceeded 150MB limit.")
+                raise MaxSizeException("Exceeded 150MB limit.")
 
     def process_queue():
         global is_downloading
@@ -74,15 +76,16 @@ def setup(bot):
             is_downloading = True
             
             message, query, status_msg = task
-            filename = f"vid_{message.chat.id}.mp4"
+            # ഒരേ സമയം ഒന്നിലധികം ഫയലുകൾ വന്നാൽ കുഴപ്പമാവാതിരിക്കാൻ പേര് മാറ്റുന്നു
+            filename = f"vid_{message.chat.id}_{int(time.time())}.mp4"
             
             try:
-                bot.edit_message_text(f"🔎 **Searching the web** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"🔎 **Searching** for '{query}'...", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 
-                video_urls = get_video_urls_from_web(query)
+                video_urls = get_video_urls(query)
 
                 if not video_urls:
-                    bot.edit_message_text(f"❌ No suitable videos found on the web for '{query}'.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ No videos found for '{query}'. Try a different word.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                     download_queue.task_done()
                     is_downloading = False
                     continue
@@ -93,18 +96,19 @@ def setup(bot):
                 width = 0
                 height = 0
 
-                # ⚠️ കിട്ടിയ ലിങ്കുകളിൽ 150MB-ക്ക് താഴെയുള്ള ഒരെണ്ണം കിട്ടുന്നത് വരെ പരീക്ഷിക്കും ⚠️
-                for video_url in video_urls[:5]: # പരമാവധി 5 വീഡിയോകൾ ട്രൈ ചെയ്യും
+                # ⚠️ കിട്ടിയതിൽ നിന്നും 150MB-ക്ക് താഴെയുള്ള ഒരെണ്ണം കിട്ടുന്നത് വരെ പരീക്ഷിക്കും
+                for video_url in video_urls[:5]:
                     domain_name = urllib.parse.urlparse(video_url).netloc
-                    bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}` (Must be under 150MB)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}`...**\n(Looking for under 150MB)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
                     ydl_opts = {
-                        'format': 'best', # യാതൊരു ഫയൽസൈസ് ലിമിറ്റും ഇവിടെ വെക്കുന്നില്ല (എറർ വരാതിരിക്കാൻ)
+                        'format': 'best',
                         'outtmpl': filename,
                         'quiet': True,
                         'no_warnings': True,
                         'age_limit': 18,
-                        'progress_hooks': [check_size_hook] # പകരം ഈ ഹുക്ക് വഴി സൈസ് ചെക്ക് ചെയ്യും
+                        'socket_timeout': 15, # ⚠️ ബോട്ട് ഹാങ് ആവാതിരിക്കാൻ വെച്ച ടൈംഔട്ട്
+                        'progress_hooks': [check_size_hook]
                     }
 
                     try:
@@ -115,26 +119,22 @@ def setup(bot):
                             width = info.get('width', 0)
                             height = info.get('height', 0)
                             download_success = True
-                            break # ഡൗൺലോഡ് വിജയിച്ചാൽ ലൂപ്പിൽ നിന്ന് പുറത്ത് വരും
+                            break 
                     except MaxSizeException:
-                        # 150MB കഴിഞ്ഞാൽ ഈ എറർ വരും, അപ്പോൾ ആ ഫയൽ കളഞ്ഞിട്ട് അടുത്ത വീഡിയോ നോക്കും
-                        if os.path.exists(filename):
-                            os.remove(filename)
+                        if os.path.exists(filename): os.remove(filename)
                         continue
                     except Exception as e:
-                        if os.path.exists(filename):
-                            os.remove(filename)
+                        if os.path.exists(filename): os.remove(filename)
                         continue
 
                 if not download_success:
-                    bot.edit_message_text(f"❌ **Download Failed!**\nAll found videos for '{query}' were larger than 150MB or unavailable.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"❌ **Download Failed!**\nAll found videos were larger than 150MB.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                     download_queue.task_done()
                     is_downloading = False
                     continue
 
                 bot.edit_message_text(f"📤 **Uploading {title[:30]}... (Using Pyrogram)**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-                # Pyrogram വഴി ഫയൽ അയക്കുന്നു
                 def run_pyrogram_upload():
                     import asyncio
                     from pyrogram import Client
