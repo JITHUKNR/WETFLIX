@@ -5,7 +5,14 @@ import time
 import requests
 import subprocess
 import glob
+import threading
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+# ⚠️ നിങ്ങൾക്ക് ഈ സമയം മാറ്റാവുന്നതാണ് ⚠️
+COOLDOWN_TIME = 60  # ബട്ടൺ വീണ്ടും അമർത്താനുള്ള സമയപരിധി (സെക്കൻഡിൽ)
+DELETE_TIME = 120   # വീഡിയോ തനിയെ ഡിലീറ്റ് ആവാനുള്ള സമയം (സെക്കൻഡിൽ)
+
+user_cooldowns = {}
 
 def setup(bot):
 
@@ -56,54 +63,78 @@ def setup(bot):
             
         return None
 
-    # വീഡിയോ മുറിക്കാനുള്ള ഫംഗ്ഷൻ (48MB വെച്ച് മുറിക്കും)
     def split_video(input_file, chat_id):
         split_prefix = f"split_{chat_id}_{int(time.time())}"
-        # 48MB-ക്ക് തുല്യമായ സൈസ് ലിമിറ്റ് നൽകുന്നു (ടെലഗ്രാം സേഫ്റ്റിക്ക് വേണ്ടി)
-        target_size_bytes = 48 * 1024 * 1024 
-        
         try:
-            # ffmpeg ഉപയോഗിച്ച് വീഡിയോ സൈസ് അടിസ്ഥാനമാക്കി മുറിക്കുന്നു
             command = [
                 'ffmpeg', '-i', input_file,
                 '-c', 'copy', '-map', '0',
-                '-segment_time', '00:03:00', # ശരാശരി 3 മിനിറ്റ് വെച്ച് മുറിക്കുന്നു (സൈസ് കുറയ്ക്കാൻ)
+                '-segment_time', '00:03:00',
                 '-f', 'segment',
                 '-reset_timestamps', '1',
                 f"{split_prefix}_part%03d.mp4"
             ]
             subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            # മുറിച്ച ഫയലുകളുടെ ലിസ്റ്റ് എടുക്കുന്നു
             split_files = sorted(glob.glob(f"{split_prefix}_part*.mp4"))
             return split_files
         except Exception as e:
             print(f"Split Error: {e}")
             return []
 
-    @bot.message_handler(commands=['local'])
-    def fetch_local_video(message):
-        status_msg = bot.send_message(message.chat.id, "📂 **Checking @aaawetflix for new links...**", parse_mode='Markdown')
+    # ⚠️ സ്റ്റാർട്ട് കമാൻഡ് അടിക്കുമ്പോൾ BOOM ബട്ടൺ വരാൻ ⚠️
+    @bot.message_handler(commands=['start', 'boom'])
+    def send_welcome(message):
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("💥 BOOM", callback_data="boom_click"))
         
-        filename = f"local_{message.chat.id}_{int(time.time())}.mp4"
+        bot.send_message(
+            message.chat.id,
+            f"⚡ **Welcome {message.from_user.first_name}!**\n\n👇 Click the **BOOM** button below to get videos:",
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
+
+    # ⚠️ BOOM ബട്ടൺ വർക്ക് ചെയ്യുന്ന ഭാഗം ⚠️
+    @bot.callback_query_handler(func=lambda call: call.data == "boom_click")
+    def handle_boom_button(call):
+        user_id = call.from_user.id
+        chat_id = call.message.chat.id
+        current_time = time.time()
+
+        # ടൈമർ പരിശോധിക്കുന്നു
+        if user_id in user_cooldowns:
+            time_passed = current_time - user_cooldowns[user_id]
+            if time_passed < COOLDOWN_TIME:
+                time_left = int(COOLDOWN_TIME - time_passed)
+                # സമയം കഴിഞ്ഞില്ലെങ്കിൽ സ്ക്രീനിൽ അലർട്ട് കാണിക്കും
+                bot.answer_callback_query(call.id, f"⏳ Please wait {time_left} seconds before clicking again!", show_alert=True)
+                return
+        
+        user_cooldowns[user_id] = current_time
+        bot.answer_callback_query(call.id, "💥 Processing your request...")
+
+        status_msg = bot.send_message(chat_id, "📂 **Searching for new video...**", parse_mode='Markdown')
+        
+        filename = f"local_{chat_id}_{int(time.time())}.mp4"
         
         try:
             video_url = get_link_from_channel()
             
             if not video_url:
-                bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some video links in your channel.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text("❌ **No new links available right now!**", chat_id, status_msg.message_id, parse_mode='Markdown')
+                del user_cooldowns[user_id] # ലിങ്ക് ഇല്ലെങ്കിൽ ടൈമർ ഒഴിവാക്കുന്നു
                 return
 
-            bot.edit_message_text(f"⏳ **Downloading video in Highest Quality...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+            bot.edit_message_text(f"⏳ **Downloading in Highest Quality...**\n🔗 `{video_url}`", chat_id, status_msg.message_id, parse_mode='Markdown')
 
-            # ⚠️ 45MB ലിമിറ്റ് ഒഴിവാക്കി, ക്വാളിറ്റി 'best' ആക്കി ⚠️
             ydl_opts = {
-                'format': 'best', # യാതൊരു നിയന്ത്രണവുമില്ലാതെ ഏറ്റവും നല്ല ക്വാളിറ്റി എടുക്കും
+                'format': 'best', 
                 'outtmpl': filename,
                 'quiet': True,
                 'no_warnings': True,
                 'age_limit': 18,
-                'socket_timeout': 60, # വലിയ ഫയലുകൾക്ക് സമയം കൂടുതൽ നൽകി
+                'socket_timeout': 60,
                 'retries': 5,
                 'extractor_args': {'generic': {'impersonate': 'chrome'}},
                 'http_headers': {
@@ -114,56 +145,72 @@ def setup(bot):
                 }
             }
 
-            title = "Channel Video"
+            title = "Video"
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
-                title = info.get('title', 'Channel Video')
+                title = info.get('title', 'Video')
 
-            # ഡൗൺലോഡ് ചെയ്ത ഫയലിന്റെ സൈസ് പരിശോധിക്കുന്നു
             file_size_mb = os.path.getsize(filename) / (1024 * 1024)
+            
+            messages_to_delete = [] # അയച്ച മെസ്സേജുകൾ സേവ് ചെയ്യാൻ
 
             if file_size_mb > 48:
-                # 48MB-ക്ക് മുകളിലാണെങ്കിൽ വീഡിയോ മുറിക്കുന്നു
-                bot.edit_message_text(f"✂️ **Video is {file_size_mb:.1f} MB (Too Large). Splitting into parts...**\n_Please wait..._", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"✂️ **Video is {file_size_mb:.1f} MB. Splitting into parts...**", chat_id, status_msg.message_id, parse_mode='Markdown')
                 
-                parts = split_video(filename, message.chat.id)
+                parts = split_video(filename, chat_id)
                 
                 if parts:
-                    bot.edit_message_text(f"📤 **Uploading {len(parts)} parts...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                    bot.edit_message_text(f"📤 **Uploading {len(parts)} parts...**", chat_id, status_msg.message_id, parse_mode='Markdown')
                     
                     for i, part in enumerate(parts, 1):
                         with open(part, 'rb') as video_file:
-                            bot.send_video(
-                                chat_id=message.chat.id,
+                            # ⚠️ ചാനലിന്റെ പേര് ഇല്ലാതെ ക്ലീൻ ക്യാപ്ഷൻ ⚠️
+                            msg = bot.send_video(
+                                chat_id=chat_id,
                                 video=video_file,
-                                caption=f"📁 **{title[:40]}**\n🌟 *High Quality (Part {i}/{len(parts)})*\n📥 _Sourced from @aaawetflix_",
+                                caption=f"📁 **{title[:50]}**\n🌟 *Part {i}/{len(parts)}*",
                                 parse_mode='Markdown',
                                 supports_streaming=True,
                                 timeout=120
                             )
-                        os.remove(part) # അയച്ച ശേഷം പാർട്ട് ഡിലീറ്റ് ചെയ്യുന്നു
+                            messages_to_delete.append(msg.message_id)
+                        os.remove(part)
                     
-                    bot.delete_message(message.chat.id, status_msg.message_id)
+                    bot.delete_message(chat_id, status_msg.message_id)
                 else:
-                    bot.edit_message_text("❌ Failed to split the large video.", message.chat.id, status_msg.message_id)
+                    bot.edit_message_text("❌ Failed to split the large video.", chat_id, status_msg.message_id)
             else:
-                # 48MB-ക്ക് താഴെയാണെങ്കിൽ നേരിട്ട് അയക്കുന്നു
-                bot.edit_message_text("📤 **Sending High Quality video to chat...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text("📤 **Sending High Quality video...**", chat_id, status_msg.message_id, parse_mode='Markdown')
                 
                 with open(filename, 'rb') as video_file:
-                    bot.send_video(
-                        chat_id=message.chat.id,
+                    # ⚠️ ചാനലിന്റെ പേര് ഇല്ലാതെ ക്ലീൻ ക്യാപ്ഷൻ ⚠️
+                    msg = bot.send_video(
+                        chat_id=chat_id,
                         video=video_file,
-                        caption=f"📁 **{title[:50]}**\n🌟 *High Quality*\n📥 _Sourced from @aaawetflix_",
+                        caption=f"📁 **{title[:50]}**",
                         parse_mode='Markdown',
                         supports_streaming=True,
                         timeout=120
                     )
-                bot.delete_message(message.chat.id, status_msg.message_id)
+                    messages_to_delete.append(msg.message_id)
+                
+                bot.delete_message(chat_id, status_msg.message_id)
+
+            # ⚠️ ഓട്ടോ ഡിലീറ്റ് ഫംഗ്ഷൻ (ബാക്ക്ഗ്രൗണ്ടിൽ വർക്ക് ചെയ്യും) ⚠️
+            def auto_delete_task(chat, msg_ids):
+                time.sleep(DELETE_TIME)
+                for m_id in msg_ids:
+                    try:
+                        bot.delete_message(chat, m_id)
+                    except:
+                        pass
+
+            if messages_to_delete:
+                threading.Thread(target=auto_delete_task, args=(chat_id, messages_to_delete)).start()
 
         except Exception as err:
             try:
-                bot.edit_message_text(f"❌ Error processing link: `{str(err)[:100]}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"❌ Error processing link: `{str(err)[:100]}`", chat_id, status_msg.message_id, parse_mode='Markdown')
             except: pass
         finally:
             if os.path.exists(filename):
