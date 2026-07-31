@@ -96,10 +96,10 @@ def setup(bot):
         )
 
     # ⚠️ BOOM ബട്ടൺ വർക്ക് ചെയ്യുന്ന ഭാഗം ⚠️
-    @bot.callback_query_handler(func=lambda call: call.data == "boom_click")
-    def handle_boom_button(call):
-        user_id = call.from_user.id
-        chat_id = call.message.chat.id
+    @bot.message_handler(func=lambda message: message.text == "💥 BOOM")
+    def handle_boom_button(message):
+        user_id = message.from_user.id
+        chat_id = message.chat.id
         current_time = time.time()
 
         # ടൈമർ പരിശോധിക്കുന്നു
