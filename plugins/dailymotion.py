@@ -7,33 +7,47 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 def setup(bot):
 
-    # ⚠️ യാതൊരുവിധ API യുമില്ലാതെ വളരെ ലളിതമായി ചാനൽ വായിക്കുന്നു ⚠️
-    CHANNEL_USERNAME = "aaawetflix" # @ ഇല്ലാതെ പേര് മാത്രം
+    # താങ്കളുടെ ചാനലിന്റെ പേര്
+    CHANNEL_USERNAME = "aaawetflix"
 
     def get_link_from_channel():
         try:
-            # പബ്ലിക് ചാനൽ ആയതുകൊണ്ട് ടെലഗ്രാം വെബ് വഴി നേരിട്ട് ലിങ്കുകൾ എടുക്കുന്നു
+            # ടെലഗ്രാം വെബ് വഴി പബ്ലിക് ചാനൽ വായിക്കുന്നു
             url = f"https://t.me/s/{CHANNEL_USERNAME}"
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
             r = requests.get(url, headers=headers)
             
-            # മെസ്സേജുകളിൽ നിന്ന് വീഡിയോ വെബ്സൈറ്റുകളുടെ ലിങ്കുകൾ മാത്രം തപ്പിയെടുക്കുന്നു
-            urls = re.findall(r'(https?://(?:www\.)?(?:xvideos\.com|xnxx\.com|pornhub\.com)[^\s"\'<>]+)', r.text)
+            # ⚠️ ഏത് വെബ്സൈറ്റിന്റെ ലിങ്ക് ആയാലും (http/https) അത് എടുക്കാൻ പറയുന്നു ⚠️
+            urls = re.findall(r'(https?://[^\s"\'<>]+)', r.text)
             
             if not urls:
                 return None
                 
-            # ഏറ്റവും പുതിയ ലിങ്കുകൾ ആദ്യം കിട്ടാൻ വേണ്ടി ലിസ്റ്റ് തിരിച്ചിടുന്നു
-            urls.reverse()
+            # വെബ്സൈറ്റിന്റെ പേര് മാത്രമുള്ള ലിങ്കുകളും അനാവശ്യ ലിങ്കുകളും ഒഴിവാക്കുന്നു
+            valid_urls = []
+            for u in urls:
+                # ടെലഗ്രാമിന്റെ സ്വന്തം ലിങ്കുകളോ, വെറും .com മാത്രമുള്ള ലിങ്കുകളോ ഒഴിവാക്കുന്നു
+                if 't.me' not in u and 'telegram.org' not in u and len(u) > 25:
+                    # iframe കോഡിൽ നിന്നുള്ള ലിങ്ക് ആണെങ്കിൽ അതെടുക്കുന്നു
+                    if 'embed' in u or '/video/' in u or '/videos/' in u or 'xhaccess' in u or 'txnhh' in u:
+                        valid_urls.append(u)
             
-            # അയച്ച ലിങ്കുകൾ സേവ് ചെയ്യാനുള്ള ഫയൽ (ഡ്യൂപ്ലിക്കേറ്റ് ഒഴിവാക്കാൻ)
+            if not valid_urls:
+                # മുകളിലെ കണ്ടീഷൻ വർക്ക് ആയില്ലെങ്കിൽ കിട്ടിയ വലിയ ലിങ്കുകൾ എല്ലാം എടുക്കുന്നു
+                valid_urls = [u for u in urls if 't.me' not in u and len(u) > 20]
+                
+            if not valid_urls:
+                return None
+
+            valid_urls.reverse()
+            
             sent_file = "sent_links.txt"
             sent_links = set()
             if os.path.exists(sent_file):
                 with open(sent_file, "r", encoding="utf-8") as sf:
                     sent_links = set(line.strip() for line in sf.readlines())
             
-            for u in urls:
+            for u in valid_urls:
                 if u not in sent_links:
                     with open(sent_file, "a", encoding="utf-8") as sf:
                         sf.write(u + "\n")
@@ -60,7 +74,7 @@ def setup(bot):
             video_url = get_link_from_channel()
             
             if not video_url:
-                bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some valid video links (xvideos/xnxx) in your channel.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some video links in your channel.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 return
 
             bot.edit_message_text(f"⏳ **Downloading video...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
