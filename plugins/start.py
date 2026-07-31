@@ -25,7 +25,6 @@ def setup(bot):
             first_name = message.from_user.first_name
             now = datetime.datetime.now()
             
-            # റഫറൽ വഴി വന്നതാണോ എന്ന് നോക്കുന്നു
             parts = message.text.split()
             referrer_id = None
             if len(parts) > 1 and parts[1].startswith("REF_"):
@@ -34,7 +33,6 @@ def setup(bot):
                 except:
                     pass
             
-            # 1. പുതിയ യൂസറെ കൃത്യമായി ഡാറ്റാബേസിൽ സേവ് ചെയ്യുന്നു
             if users_col is not None:
                 try:
                     user_exists = users_col.find_one({"user_id": user_id})
@@ -49,14 +47,12 @@ def setup(bot):
                             "referred_by": referrer_id
                         })
                         
-                        # റഫർ ചെയ്ത ആൾക്ക് പോയിൻ്റ് കൊടുക്കുന്നു
                         if referrer_id and referrer_id != user_id:
                             referrer_data = users_col.find_one({"user_id": referrer_id})
                             if referrer_data:
                                 new_refs = referrer_data.get("referrals", 0) + 1
                                 
                                 if new_refs >= 5:
-                                    # 5 പേരായി! 7 ദിവസത്തെ VIP കൊടുക്കുന്നു
                                     vip_time = now + datetime.timedelta(days=7)
                                     users_col.update_one({"user_id": referrer_id}, {"$set": {"referrals": 0, "vip_until": vip_time}})
                                     try:
@@ -80,7 +76,6 @@ def setup(bot):
                     if not is_subscribed(bot, user_id, ch["id"]):
                         not_joined.append(ch)
 
-            # 2. Force Subscribe Check (ഇത് ഇൻലൈൻ ബട്ടൺ ആയി തന്നെ തുടരും)
             if not_joined:
                 markup = InlineKeyboardMarkup(row_width=1)
                 for idx, ch in enumerate(not_joined, start=1):
@@ -95,7 +90,6 @@ def setup(bot):
                 bot.reply_to(message, fsub_text, reply_markup=markup, parse_mode='HTML')
                 return
                 
-            # 3. Main Welcome Message 
             success_text = (
                 f"⚡️ <b>Welcome to WETFLIX Ultimate Bot, {first_name}!</b> 🎉\n\n"
                 f"Your ultimate automated media destination. Here is what you can do with me:\n\n"
@@ -106,18 +100,19 @@ def setup(bot):
                 f"💡 <i>Tip: Use the buttons below to explore features seamlessly!</i>"
             )
             
-            # പുതിയ പ്രൊഫൈൽ ബട്ടൺ ഉൾപ്പെടെയുള്ള കിടിലൻ ബട്ടണുകൾ
             reply_markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
             btn1 = KeyboardButton("🍓 PHOTO")
             btn2 = KeyboardButton("🔞 VIDEO")
             btn3 = KeyboardButton("💀 STICKER")
             btn4 = KeyboardButton("💅🏻 ANIME")
             btn5 = KeyboardButton("🎁 REFER")
-            btn6 = KeyboardButton("👤 MY PROFILE") # പുതിയ ബട്ടൺ ആഡ് ചെയ്തു
+            btn6 = KeyboardButton("👤 MY PROFILE")
+            btn7 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെ BOOM ബട്ടൺ ചേർത്തു ⚠️
             
-            # ബട്ടണുകൾ കാണാൻ ഭംഗിയായി 2 വീതം അടുക്കിവെക്കുന്നു
+            # ബട്ടണുകൾ ഭംഗിയായി അടുക്കിവെക്കുന്നു
             reply_markup.row(btn1, btn2)
             reply_markup.row(btn3, btn4)
+            reply_markup.row(btn7) # നടുക്കായി കൊടുത്തിട്ടുണ്ട്
             reply_markup.row(btn5, btn6)
             
             bot.reply_to(message, success_text, reply_markup=reply_markup, parse_mode='HTML')
@@ -126,7 +121,6 @@ def setup(bot):
             bot.reply_to(message, f"❌ An error occurred:\n`{e}`", parse_mode='Markdown')
             print(traceback.format_exc())
 
-    # റഫറൽ ലിങ്ക് ജനറേറ്റ് ചെയ്യാനുള്ള കമാൻഡ്
     @bot.message_handler(commands=['refer'])
     @bot.message_handler(func=lambda message: message.text == "🎁 REFER")
     def refer_command(message):
@@ -135,7 +129,6 @@ def setup(bot):
             user_id = message.from_user.id
             ref_link = f"https://t.me/{bot_info.username}?start=REF_{user_id}"
             
-            # ശ്രദ്ധിക്കുക: ഇവിടെയാണ് ആ എറർ മാറ്റിയത് (is not None എന്ന് കൃത്യമായി ചേർത്തു)
             user_data = users_col.find_one({"user_id": user_id}) if users_col is not None else None
             current_refs = user_data.get("referrals", 0) if user_data else 0
             
@@ -152,7 +145,6 @@ def setup(bot):
             bot.reply_to(message, f"❌ Error generating invite link: `{e}`", parse_mode='Markdown')
             print(f"Referral Error: {e}")
 
-    # ⚠️ പുതിയ പ്രൊഫൈൽ സിസ്റ്റം കോഡ് ഇവിടെ ചേർത്തു (പഴയതൊന്നും മാറ്റിയിട്ടില്ല) ⚠️
     @bot.message_handler(func=lambda message: message.text == "👤 MY PROFILE")
     def profile_command(message):
         try:
@@ -201,7 +193,6 @@ def setup(bot):
             bot.reply_to(message, f"❌ Error loading profile: `{e}`", parse_mode='Markdown')
             print(f"Profile Error: {e}")
 
-    # ⚠️ ഇവിടെയാണ് ബട്ടൺ നേരിട്ട് വരാൻ മാറ്റം വരുത്തിയത് ⚠️
     @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
     def check_sub(call):
         try:
@@ -217,7 +208,6 @@ def setup(bot):
                 bot.answer_callback_query(call.id, "✅ Verification successful!", show_alert=True)
                 bot.delete_message(call.message.chat.id, call.message.message_id)
                 
-                # വീണ്ടും /start അടിക്കാൻ പറയുന്നതിന് പകരം യൂസർക്ക് നേരിട്ട് വെൽക്കം മെസ്സേജും കീബോർഡും നൽകുന്നു
                 first_name = call.from_user.first_name
                 success_text = (
                     f"⚡️ <b>Welcome to WETFLIX Ultimate Bot, {first_name}!</b> 🎉\n\n"
@@ -229,17 +219,18 @@ def setup(bot):
                     f"💡 <i>Tip: Use the buttons below to explore features seamlessly!</i>"
                 )
                 
-                # ഇവിടെയും ആ പുതിയ പ്രൊഫൈൽ ബട്ടൺ ആഡ് ചെയ്തു
                 reply_markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
                 btn1 = KeyboardButton("🍓 PHOTO")
                 btn2 = KeyboardButton("🔞 VIDEO")
                 btn3 = KeyboardButton("💀 STICKER")
                 btn4 = KeyboardButton("💅🏻 ANIME")
                 btn5 = KeyboardButton("🎁 REFER")
-                btn6 = KeyboardButton("👤 MY PROFILE") # പുതിയ ബട്ടൺ
+                btn6 = KeyboardButton("👤 MY PROFILE")
+                btn7 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെയും BOOM ബട്ടൺ ചേർത്തു ⚠️
                 
                 reply_markup.row(btn1, btn2)
                 reply_markup.row(btn3, btn4)
+                reply_markup.row(btn7) 
                 reply_markup.row(btn5, btn6)
                 
                 bot.send_message(call.message.chat.id, success_text, reply_markup=reply_markup, parse_mode='HTML')
