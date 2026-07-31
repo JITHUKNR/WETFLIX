@@ -7,9 +7,9 @@ import requests
 import yt_dlp
 import random
 import time
-import asyncio
 
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.sync import idle # Pyrogram-നെ sync മോഡിൽ വിളിക്കാൻ
 
 download_queue = queue.Queue()
 is_downloading = False
@@ -94,10 +94,9 @@ def setup(bot):
                 for video_url in video_urls[:5]:
                     domain_name = urllib.parse.urlparse(video_url).netloc
                     
-                    # ⚠️ എറർ ഒഴിവാക്കാൻ ഒരേ മെസ്സേജ് വീണ്ടും എഡിറ്റ് ചെയ്യുന്നത് മാറ്റി ⚠️
                     try:
                         bot.edit_message_text(f"⏳ **Checking Video from `{domain_name}`...**\n(Looking for under 150MB)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                    except: pass # എറർ വന്നാലും കുഴപ്പമില്ലാതെ മുന്നോട്ട് പോകും
+                    except: pass 
 
                     ydl_opts = {
                         'format': 'best',
@@ -135,27 +134,31 @@ def setup(bot):
                     bot.edit_message_text(f"📤 **Uploading {title[:30]}...**\n(This might take a minute, please wait)", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 except: pass
 
-                def do_pyrogram_upload():
+                # ⚠️ അസിൻക് ഇല്ലാതെ പൂർണ്ണമായും സിങ്ക് (sync) ആയി Pyrogram റൺ ചെയ്യുന്നു ⚠️
+                def upload_sync_pyrogram():
                     from pyrogram import Client
-                    import asyncio
+                    # Client ഉണ്ടാക്കുന്നു
+                    app = Client("wetflix_sync_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
                     
-                    async def main():
-                        app = Client("wetflix_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True)
-                        async with app:
-                            await app.send_video(
-                                chat_id=message.chat.id,
-                                video=filename,
-                                caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
-                                duration=duration,
-                                width=width,
-                                height=height,
-                                supports_streaming=True
-                            )
+                    # സ്റ്റാർട്ട് ചെയ്യുന്നു (await ഇല്ലാതെ)
+                    app.start()
                     
-                    asyncio.run(main())
+                    # വീഡിയോ അയക്കുന്നു (await ഇല്ലാതെ)
+                    app.send_video(
+                        chat_id=message.chat.id,
+                        video=filename,
+                        caption=f"🔞 **{title[:50]}...**\n\n📥 _Downloaded via WETFLIX_",
+                        duration=duration,
+                        width=width,
+                        height=height,
+                        supports_streaming=True
+                    )
+                    
+                    # സ്റ്റോപ്പ് ചെയ്യുന്നു
+                    app.stop()
 
-                # അപ്‌ലോഡ് റൺ ചെയ്യുന്നു
-                do_pyrogram_upload()
+                # ഫംഗ്ഷൻ നേരിട്ട് റൺ ചെയ്യുന്നു (ത്രെഡോ ലൂപ്പോ ഇല്ലാതെ)
+                upload_sync_pyrogram()
                 
                 try:
                     bot.delete_message(message.chat.id, status_msg.message_id)
