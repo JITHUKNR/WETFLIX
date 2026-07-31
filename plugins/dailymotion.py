@@ -3,19 +3,13 @@ import re
 import yt_dlp
 import time
 import requests
+import subprocess
+import glob
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram import Client
 
 def setup(bot):
 
     CHANNEL_USERNAME = "aaawetflix"
-    
-    # ⚠️ വലിയ ഫയലുകൾ അപ്‌ലോഡ് ചെയ്യാൻ Pyrogram വേണം ⚠️
-    # നിങ്ങളുടെ മെയിൻ ഫയലിലെ API_ID ഉം API_HASH ഉം ഇവിടെ ലഭിക്കുന്നുണ്ടെന്ന് ഉറപ്പാക്കുക
-    API_ID_STR = os.environ.get("API_ID")
-    API_ID = int(API_ID_STR) if API_ID_STR else 0
-    API_HASH = os.environ.get("API_HASH", "")
-    BOT_TOKEN = bot.token
 
     def get_link_from_channel():
         try:
@@ -62,6 +56,31 @@ def setup(bot):
             
         return None
 
+    # വീഡിയോ മുറിക്കാനുള്ള ഫംഗ്ഷൻ (48MB വെച്ച് മുറിക്കും)
+    def split_video(input_file, chat_id):
+        split_prefix = f"split_{chat_id}_{int(time.time())}"
+        # 48MB-ക്ക് തുല്യമായ സൈസ് ലിമിറ്റ് നൽകുന്നു (ടെലഗ്രാം സേഫ്റ്റിക്ക് വേണ്ടി)
+        target_size_bytes = 48 * 1024 * 1024 
+        
+        try:
+            # ffmpeg ഉപയോഗിച്ച് വീഡിയോ സൈസ് അടിസ്ഥാനമാക്കി മുറിക്കുന്നു
+            command = [
+                'ffmpeg', '-i', input_file,
+                '-c', 'copy', '-map', '0',
+                '-segment_time', '00:03:00', # ശരാശരി 3 മിനിറ്റ് വെച്ച് മുറിക്കുന്നു (സൈസ് കുറയ്ക്കാൻ)
+                '-f', 'segment',
+                '-reset_timestamps', '1',
+                f"{split_prefix}_part%03d.mp4"
+            ]
+            subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # മുറിച്ച ഫയലുകളുടെ ലിസ്റ്റ് എടുക്കുന്നു
+            split_files = sorted(glob.glob(f"{split_prefix}_part*.mp4"))
+            return split_files
+        except Exception as e:
+            print(f"Split Error: {e}")
+            return []
+
     @bot.message_handler(commands=['local'])
     def fetch_local_video(message):
         status_msg = bot.send_message(message.chat.id, "📂 **Checking @aaawetflix for new links...**", parse_mode='Markdown')
@@ -75,16 +94,16 @@ def setup(bot):
                 bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some video links in your channel.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 return
 
-            bot.edit_message_text(f"⏳ **Downloading video in High Quality...**\n🔗 `{video_url}`\n*(Bypassing Cloudflare...)*", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+            bot.edit_message_text(f"⏳ **Downloading video in Highest Quality...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-            # ⚠️ 45MB Limit പൂർണ്ണമായും ഒഴിവാക്കി, ഒപ്പം 'best' (ഏറ്റവും കൂടിയ ക്വാളിറ്റി) ആക്കി ⚠️
+            # ⚠️ 45MB ലിമിറ്റ് ഒഴിവാക്കി, ക്വാളിറ്റി 'best' ആക്കി ⚠️
             ydl_opts = {
                 'format': 'best', # യാതൊരു നിയന്ത്രണവുമില്ലാതെ ഏറ്റവും നല്ല ക്വാളിറ്റി എടുക്കും
                 'outtmpl': filename,
                 'quiet': True,
                 'no_warnings': True,
                 'age_limit': 18,
-                'socket_timeout': 60, # വലിയ വീഡിയോ ആയതുകൊണ്ട് സമയം കൂട്ടി നൽകി
+                'socket_timeout': 60, # വലിയ ഫയലുകൾക്ക് സമയം കൂടുതൽ നൽകി
                 'retries': 5,
                 'extractor_args': {'generic': {'impersonate': 'chrome'}},
                 'http_headers': {
@@ -93,7 +112,6 @@ def setup(bot):
                     'Accept-Language': 'en-us,en;q=0.5',
                     'Sec-Fetch-Mode': 'navigate'
                 }
-                # progress_hooks പൂർണ്ണമായും എടുത്തുകളഞ്ഞു (സൈസ് ചെക്ക് ചെയ്യില്ല)
             }
 
             title = "Channel Video"
@@ -101,33 +119,42 @@ def setup(bot):
                 info = ydl.extract_info(video_url, download=True)
                 title = info.get('title', 'Channel Video')
 
-            bot.edit_message_text("📤 **Sending High Quality video to chat (Might take a while)...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-
-            # ഫയൽ സൈസ് പരിശോധിക്കുന്നു
+            # ഡൗൺലോഡ് ചെയ്ത ഫയലിന്റെ സൈസ് പരിശോധിക്കുന്നു
             file_size_mb = os.path.getsize(filename) / (1024 * 1024)
 
-            # ⚠️ 50MB ക്ക് മുകളിലാണെങ്കിൽ Pyrogram ഉപയോഗിച്ച് അപ്‌ലോഡ് ചെയ്യുന്നു ⚠️
-            if file_size_mb > 50:
-                if not API_ID or not API_HASH:
-                    bot.edit_message_text("❌ Error: Cannot upload videos larger than 50MB without API_ID and API_HASH set in your environment.", message.chat.id, status_msg.message_id)
-                else:
-                    bot.edit_message_text(f"📤 **Uploading large video ({file_size_mb:.1f} MB)...**\n_Please wait, this might take a while._", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+            if file_size_mb > 48:
+                # 48MB-ക്ക് മുകളിലാണെങ്കിൽ വീഡിയോ മുറിക്കുന്നു
+                bot.edit_message_text(f"✂️ **Video is {file_size_mb:.1f} MB (Too Large). Splitting into parts...**\n_Please wait..._", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                
+                parts = split_video(filename, message.chat.id)
+                
+                if parts:
+                    bot.edit_message_text(f"📤 **Uploading {len(parts)} parts...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                     
-                    with Client("wetflix_upload_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
-                        app.send_video(
-                            chat_id=message.chat.id,
-                            video=filename,
-                            caption=f"📁 **{title[:50]}**\n🌟 *High Quality | {file_size_mb:.1f} MB*\n📥 _Sourced from @aaawetflix_",
-                            parse_mode='Markdown' # Pyrogram ഉപയോഗിക്കുമ്പോൾ supports_streaming ആവശ്യമില്ല
-                        )
+                    for i, part in enumerate(parts, 1):
+                        with open(part, 'rb') as video_file:
+                            bot.send_video(
+                                chat_id=message.chat.id,
+                                video=video_file,
+                                caption=f"📁 **{title[:40]}**\n🌟 *High Quality (Part {i}/{len(parts)})*\n📥 _Sourced from @aaawetflix_",
+                                parse_mode='Markdown',
+                                supports_streaming=True,
+                                timeout=120
+                            )
+                        os.remove(part) # അയച്ച ശേഷം പാർട്ട് ഡിലീറ്റ് ചെയ്യുന്നു
+                    
                     bot.delete_message(message.chat.id, status_msg.message_id)
+                else:
+                    bot.edit_message_text("❌ Failed to split the large video.", message.chat.id, status_msg.message_id)
             else:
-                # 50MB ക്ക് താഴെയാണെങ്കിൽ സാധാരണ പോലെ telebot ഉപയോഗിച്ച് വേഗത്തിൽ അപ്‌ലോഡ് ചെയ്യുന്നു
+                # 48MB-ക്ക് താഴെയാണെങ്കിൽ നേരിട്ട് അയക്കുന്നു
+                bot.edit_message_text("📤 **Sending High Quality video to chat...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                
                 with open(filename, 'rb') as video_file:
                     bot.send_video(
                         chat_id=message.chat.id,
                         video=video_file,
-                        caption=f"📁 **{title[:50]}**\n🌟 *High Quality | {file_size_mb:.1f} MB*\n📥 _Sourced from @aaawetflix_",
+                        caption=f"📁 **{title[:50]}**\n🌟 *High Quality*\n📥 _Sourced from @aaawetflix_",
                         parse_mode='Markdown',
                         supports_streaming=True,
                         timeout=120
@@ -136,7 +163,7 @@ def setup(bot):
 
         except Exception as err:
             try:
-                bot.edit_message_text(f"❌ Error processing link: `{str(err)[:100]}`\n\n*(Check if Cloudflare Blocked or Link Invalid)*", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"❌ Error processing link: `{str(err)[:100]}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
             except: pass
         finally:
             if os.path.exists(filename):
