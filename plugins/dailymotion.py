@@ -1,89 +1,122 @@
-import requests
-import random
-import urllib.parse
+import os
+import re
+import yt_dlp
+import time
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client
 
 def setup(bot):
-    
-    # റെഡ്ഡിറ്റിൽ നിന്നും വീഡിയോ എടുക്കുന്ന ഫംഗ്ഷൻ
-    def get_reddit_video(query):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-        }
-        
-        encoded_query = urllib.parse.quote(query)
-        # ⚠️ ഏറ്റവും പുതിയ മാറ്റം: പ്രത്യേക ഗ്രൂപ്പുകൾ ഒഴിവാക്കി റെഡ്ഡിറ്റിൽ മുഴുവനായി തിരയുന്നു (include_over_18=on) ⚠️
-        search_url = f"https://www.reddit.com/search.json?q={encoded_query}&include_over_18=on&sort=relevance&t=all"
-        
+    API_ID_STR = os.environ.get("API_ID")
+    API_ID = int(API_ID_STR) if API_ID_STR else 0
+    API_HASH = os.environ.get("API_HASH", "")
+    BOT_TOKEN = bot.token
+
+    # ⚠️ നിങ്ങളുടെ ടെലഗ്രാം ചാനലിന്റെ യൂസർനെയിം ഇവിടെ നൽകിയിരിക്കുന്നു
+    CHANNEL_USERNAME = "@aaawetflix"
+
+    # ടെലഗ്രാം ചാനലിൽ നിന്ന് ലിങ്കുകൾ ഓട്ടോമാറ്റിക് ആയി എടുക്കുന്ന ഫംഗ്ഷൻ
+    def get_link_from_channel():
+        if not API_ID or not API_HASH:
+            return None
+            
         try:
-            response = requests.get(search_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                # കിട്ടിയ റിസൾട്ടുകൾ എടുക്കുന്നു
-                posts = data.get('data', {}).get('children', [])
+            # Pyrogram വഴി ചാനൽ റീഡ് ചെയ്യുന്നു
+            with Client("wetflix_channel_session", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, in_memory=True) as app:
+                messages = app.get_chat_history(CHANNEL_USERNAME, limit=50)
                 
-                valid_videos = []
-                for post in posts:
-                    post_data = post['data']
-                    
-                    # 1. റെഡ്ഡിറ്റിൽ നേരിട്ട് അപ്‌ലോഡ് ചെയ്ത വീഡിയോകൾ (v.redd.it)
-                    if post_data.get('is_video'):
-                        if 'secure_media' in post_data and post_data['secure_media'] and 'reddit_video' in post_data['secure_media']:
-                            video_url = post_data['secure_media']['reddit_video']['fallback_url']
-                            title = post_data.get('title', 'Reddit Video')
-                            valid_videos.append({'url': video_url, 'title': title})
-                            
-                    # 2. മറ്റ് ഡയറക്റ്റ് ലിങ്കുകൾ (.mp4 അല്ലെങ്കിൽ .gifv)
-                    elif 'url' in post_data:
-                        url = post_data['url']
-                        if url.endswith(('.mp4', '.gifv')):
-                            url = url.replace('.gifv', '.mp4')
-                            title = post_data.get('title', 'Reddit Video')
-                            valid_videos.append({'url': url, 'title': title})
+                # ഇതിനകം അയച്ച ലിങ്കുകൾ സേവ് ചെയ്തു വെക്കുന്ന ഫയൽ (ഡപ്ലിക്കേറ്റ് ഒഴിവാക്കാൻ)
+                sent_file = "sent_links.txt"
+                sent_links = set()
+                if os.path.exists(sent_file):
+                    with open(sent_file, "r", encoding="utf-8") as sf:
+                        sent_links = set(line.strip() for line in sf.readlines())
                 
-                if valid_videos:
-                    # കിട്ടിയ വീഡിയോകളിൽ നിന്നും ഒരെണ്ണം റാൻഡം ആയി എടുക്കുന്നു
-                    return random.choice(valid_videos)
+                for message in messages:
+                    if message.text:
+                        # മെസ്സേജിൽ നിന്ന് ലിങ്കുകൾ കണ്ടുപിടിക്കുന്നു
+                        urls = re.findall(r'https?://[^\s]+', message.text)
+                        for url in urls:
+                            if url not in sent_links:
+                                with open(sent_file, "a", encoding="utf-8") as sf:
+                                    sf.write(url + "\n")
+                                return url
         except Exception as e:
-            print(f"Reddit Search Error: {e}")
-            pass
+            print(f"Channel Read Error: {e}")
             
         return None
 
-    @bot.message_handler(commands=['search', 'dm', 'dl', 'video'])
-    def reddit_video_search(message):
+    # സൈസ് 45MB-ൽ കൂടാൻ പാടില്ല എന്ന് ഉറപ്പാക്കാൻ
+    class MaxSizeException(Exception): pass
+
+    def check_size_hook(d):
+        if d['status'] == 'downloading':
+            if d.get('downloaded_bytes', 0) > 45 * 1024 * 1024:
+                raise MaxSizeException("Exceeded 45MB limit.")
+
+    # യൂസർ '📂 Local' ബട്ടൺ അമർത്തുമ്പോൾ ഇത് വർക്ക് ചെയ്യും
+    @bot.callback_query_handler(func=lambda call: call.data == "local_click")
+    def handle_local_button(call):
+        message = call.message
+        status_msg = bot.send_message(message.chat.id, "📂 **Checking your Telegram channel (@aaawetflix) for links...**", parse_mode='Markdown')
+        
+        filename = f"local_{message.chat.id}_{int(time.time())}.mp4"
+        
         try:
-            parts = message.text.split(maxsplit=1)
-            if len(parts) < 2:
-                bot.reply_to(message, "🔥 **Reddit Video Search:**\n\n📖 *Usage:*\n`/search <keyword>`", parse_mode='Markdown')
+            video_url = get_link_from_channel()
+            
+            if not video_url:
+                bot.edit_message_text("❌ **No new links found in @aaawetflix!**\nPlease post some video links in your channel first.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
                 return
 
-            query = parts[1].strip()
-            status_msg = bot.reply_to(message, f"🔎 Searching Reddit for **'{query}'**...", parse_mode='Markdown')
+            bot.edit_message_text(f"⏳ **Downloading video from channel link...**\n🔗 `{video_url}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
 
-            video_data = get_reddit_video(query)
+            ydl_opts = {
+                'format': 'best[height<=480]/worst', 
+                'outtmpl': filename,
+                'quiet': True,
+                'no_warnings': True,
+                'age_limit': 18,
+                'socket_timeout': 15,
+                'progress_hooks': [check_size_hook]
+            }
 
-            if not video_data:
-                bot.edit_message_text(f"❌ No videos found on Reddit for '{query}'. Try a different keyword.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-                return
+            title = "Channel Video"
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=True)
+                title = info.get('title', 'Channel Video')
+
+            bot.edit_message_text("📤 **Sending video to chat...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+
+            with open(filename, 'rb') as video_file:
+                bot.send_video(
+                    chat_id=message.chat.id,
+                    video=video_file,
+                    caption=f"📁 **{title[:50]}**\n\n📥 _Sourced from @aaawetflix_",
+                    parse_mode='Markdown',
+                    supports_streaming=True
+                )
             
-            video_url = video_data['url']
-            title = video_data['title']
-
-            bot.edit_message_text(f"⏳ **Video found! Sending...**", message.chat.id, status_msg.message_id, parse_mode='Markdown')
-
-            # ⚠️ ഡൗൺലോഡ് ചെയ്യാതെ റെഡ്ഡിറ്റ് ലിങ്ക് നേരിട്ട് ടെലഗ്രാമിന് നൽകുന്നു ⚠️
-            bot.send_video(
-                chat_id=message.chat.id,
-                video=video_url,
-                caption=f"🔞 **{title[:60]}...**\n\n📥 _Sourced from Reddit via WETFLIX_",
-                parse_mode='Markdown'
-            )
-            
-            # വീഡിയോ അയച്ചു കഴിഞ്ഞാൽ ആ status മെസ്സേജ് ഡിലീറ്റ് ചെയ്യും
             bot.delete_message(message.chat.id, status_msg.message_id)
 
-        except Exception as e:
+        except MaxSizeException:
+            bot.edit_message_text("❌ The video from this link was larger than 45MB. Skipped to next!", message.chat.id, status_msg.message_id)
+        except Exception as err:
             try:
-                bot.edit_message_text(f"❌ Error sending video. Telegram couldn't process the video link.", message.chat.id, status_msg.message_id, parse_mode='Markdown')
+                bot.edit_message_text(f"❌ Error downloading link: `{str(err)[:80]}`", message.chat.id, status_msg.message_id, parse_mode='Markdown')
             except: pass
+        finally:
+            if os.path.exists(filename):
+                os.remove(filename)
+
+    # യൂസർ `/start` അടിക്കുമ്പോൾ '📂 Local' ബട്ടൺ കാണിക്കുന്ന രീതിയിൽ
+    @bot.message_handler(commands=['start'])
+    def send_welcome(message):
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📂 Local", callback_data="local_click"))
+        
+        bot.send_message(
+            message.chat.id,
+            f"⚡ **Welcome to WETFLIX Bot, {message.from_user.first_name}!**\n\n👇 Click the **Local** button to fetch videos directly from your channel (@aaawetflix):",
+            reply_markup=markup,
+            parse_mode='Markdown'
+        )
