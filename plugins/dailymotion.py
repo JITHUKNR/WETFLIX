@@ -69,7 +69,7 @@ def setup(bot):
             command = [
                 'ffmpeg', '-i', input_file,
                 '-c', 'copy', '-map', '0',
-                '-segment_time', '00:03:00',
+                '-segment_time', '00:01:30', # ⚠️ 50MB ലിമിറ്റ് കടക്കാതിരിക്കാൻ ഒന്നര മിനിറ്റ് വെച്ച് മുറിക്കുന്നു ⚠️
                 '-f', 'segment',
                 '-reset_timestamps', '1',
                 f"{split_prefix}_part%03d.mp4"
@@ -82,20 +82,7 @@ def setup(bot):
             print(f"Split Error: {e}")
             return []
 
-    # ⚠️ സ്റ്റാർട്ട് കമാൻഡ് അടിക്കുമ്പോൾ BOOM ബട്ടൺ വരാൻ ⚠️
-    @bot.message_handler(commands=['start', 'boom'])
-    def send_welcome(message):
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("💥 BOOM", callback_data="boom_click"))
-        
-        bot.send_message(
-            message.chat.id,
-            f"⚡ **Welcome {message.from_user.first_name}!**\n\n👇 Click the **BOOM** button below to get videos:",
-            reply_markup=markup,
-            parse_mode='Markdown'
-        )
-
-    # ⚠️ BOOM ബട്ടൺ വർക്ക് ചെയ്യുന്ന ഭാഗം ⚠️
+    # ⚠️ പ്രധാന മാറ്റം: callback_query_handler എന്നതിന് പകരം message_handler ഉപയോഗിക്കുന്നു ⚠️
     @bot.message_handler(func=lambda message: message.text == "💥 BOOM")
     def handle_boom_button(message):
         user_id = message.from_user.id
@@ -107,14 +94,13 @@ def setup(bot):
             time_passed = current_time - user_cooldowns[user_id]
             if time_passed < COOLDOWN_TIME:
                 time_left = int(COOLDOWN_TIME - time_passed)
-                # സമയം കഴിഞ്ഞില്ലെങ്കിൽ സ്ക്രീനിൽ അലർട്ട് കാണിക്കും
-                bot.answer_callback_query(call.id, f"⏳ Please wait {time_left} seconds before clicking again!", show_alert=True)
+                # മുന്നറിയിപ്പ് സന്ദേശമായി അയക്കുന്നു
+                bot.send_message(chat_id, f"⏳ Please wait {time_left} seconds before clicking BOOM again!", parse_mode='Markdown')
                 return
         
         user_cooldowns[user_id] = current_time
-        bot.answer_callback_query(call.id, "💥 Processing your request...")
 
-        status_msg = bot.send_message(chat_id, "📂 **Searching for new video...**", parse_mode='Markdown')
+        status_msg = bot.send_message(chat_id, "💥 **Processing your request...**\n📂 **Searching for new video...**", parse_mode='Markdown')
         
         filename = f"local_{chat_id}_{int(time.time())}.mp4"
         
@@ -123,7 +109,7 @@ def setup(bot):
             
             if not video_url:
                 bot.edit_message_text("❌ **No new links available right now!**", chat_id, status_msg.message_id, parse_mode='Markdown')
-                del user_cooldowns[user_id] # ലിങ്ക് ഇല്ലെങ്കിൽ ടൈമർ ഒഴിവാക്കുന്നു
+                del user_cooldowns[user_id]
                 return
 
             bot.edit_message_text(f"⏳ **Downloading in Highest Quality...**\n🔗 `{video_url}`", chat_id, status_msg.message_id, parse_mode='Markdown')
@@ -152,7 +138,7 @@ def setup(bot):
 
             file_size_mb = os.path.getsize(filename) / (1024 * 1024)
             
-            messages_to_delete = [] # അയച്ച മെസ്സേജുകൾ സേവ് ചെയ്യാൻ
+            messages_to_delete = [] 
 
             if file_size_mb > 48:
                 bot.edit_message_text(f"✂️ **Video is {file_size_mb:.1f} MB. Splitting into parts...**", chat_id, status_msg.message_id, parse_mode='Markdown')
@@ -164,7 +150,6 @@ def setup(bot):
                     
                     for i, part in enumerate(parts, 1):
                         with open(part, 'rb') as video_file:
-                            # ⚠️ ചാനലിന്റെ പേര് ഇല്ലാതെ ക്ലീൻ ക്യാപ്ഷൻ ⚠️
                             msg = bot.send_video(
                                 chat_id=chat_id,
                                 video=video_file,
@@ -183,7 +168,6 @@ def setup(bot):
                 bot.edit_message_text("📤 **Sending High Quality video...**", chat_id, status_msg.message_id, parse_mode='Markdown')
                 
                 with open(filename, 'rb') as video_file:
-                    # ⚠️ ചാനലിന്റെ പേര് ഇല്ലാതെ ക്ലീൻ ക്യാപ്ഷൻ ⚠️
                     msg = bot.send_video(
                         chat_id=chat_id,
                         video=video_file,
@@ -196,7 +180,6 @@ def setup(bot):
                 
                 bot.delete_message(chat_id, status_msg.message_id)
 
-            # ⚠️ ഓട്ടോ ഡിലീറ്റ് ഫംഗ്ഷൻ (ബാക്ക്ഗ്രൗണ്ടിൽ വർക്ക് ചെയ്യും) ⚠️
             def auto_delete_task(chat, msg_ids):
                 time.sleep(DELETE_TIME)
                 for m_id in msg_ids:
