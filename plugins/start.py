@@ -105,7 +105,6 @@ def setup(bot):
             btn2 = KeyboardButton("🔞 VIDEO")
             btn3 = KeyboardButton("💀 STICKER")
             btn4 = KeyboardButton("💅🏻 ANIME")
-            btn5 = KeyboardButton("🎁 REFER")
             btn6 = KeyboardButton("👤 MY PROFILE")
             btn7 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെ BOOM ബട്ടൺ ചേർത്തു ⚠️
             
@@ -113,7 +112,7 @@ def setup(bot):
             reply_markup.row(btn1, btn2)
             reply_markup.row(btn3, btn4)
             reply_markup.row(btn7) # നടുക്കായി കൊടുത്തിട്ടുണ്ട്
-            reply_markup.row(btn5, btn6)
+            reply_markup.row(btn6)
             
             bot.reply_to(message, success_text, reply_markup=reply_markup, parse_mode='HTML')
 
@@ -121,11 +120,10 @@ def setup(bot):
             bot.reply_to(message, f"❌ An error occurred:\n`{e}`", parse_mode='Markdown')
             print(traceback.format_exc())
 
-    @bot.message_handler(commands=['refer'])
-    def refer_command(message):
+    # റഫറൽ മെസ്സേജ് അയക്കുന്നതിനുള്ള ഫംഗ്ഷൻ വേർതിരിച്ചു
+    def send_referral_msg(chat_id, user_id):
         try:
             bot_info = bot.get_me()
-            user_id = message.from_user.id
             ref_link = f"https://t.me/{bot_info.username}?start=REF_{user_id}"
             
             user_data = users_col.find_one({"user_id": user_id}) if users_col is not None else None
@@ -138,11 +136,14 @@ def setup(bot):
                 f"📊 <b>Your Progress:</b> {current_refs} / 5 Referrals\n\n"
                 f"🔗 <b>Your Invite Link:</b>\n<code>{ref_link}</code>"
             )
-            bot.reply_to(message, text, parse_mode='HTML')
-            
+            bot.send_message(chat_id, text, parse_mode='HTML')
         except Exception as e:
-            bot.reply_to(message, f"❌ Error generating invite link: `{e}`", parse_mode='Markdown')
             print(f"Referral Error: {e}")
+
+    @bot.message_handler(commands=['refer'])
+    def refer_command(message):
+        send_referral_msg(message.chat.id, message.from_user.id)
+
 
     @bot.message_handler(func=lambda message: message.text == "👤 MY PROFILE")
     def profile_command(message):
@@ -186,17 +187,22 @@ def setup(bot):
                 f"💡 _Tip: Click 🎁 REFER to invite friends and get VIP instantly!_"
             )
 
-                        # പുതിയ ഇൻലൈൻ ബട്ടൺ ഉണ്ടാക്കുന്നു
+            # പുതിയ ഇൻലൈൻ ബട്ടൺ ഉണ്ടാക്കുന്നു
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🎁 REFER & EARN VIP", callback_data="show_referral"))
             
             # bot.reply_to ൽ reply_markup കൂടി ചേർക്കുന്നു
             bot.reply_to(message, profile_text, parse_mode='Markdown', reply_markup=markup)
-            bot.reply_to(message, profile_text, parse_mode='Markdown')
             
         except Exception as e:
             bot.reply_to(message, f"❌ Error loading profile: `{e}`", parse_mode='Markdown')
             print(f"Profile Error: {e}")
+
+    # ഇൻലൈൻ റഫർ ബട്ടൺ വർക്ക് ചെയ്യാൻ
+    @bot.callback_query_handler(func=lambda call: call.data == "show_referral")
+    def show_referral_callback(call):
+        send_referral_msg(call.message.chat.id, call.from_user.id)
+        bot.answer_callback_query(call.id)
 
     @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
     def check_sub(call):
@@ -229,12 +235,12 @@ def setup(bot):
                 btn2 = KeyboardButton("🔞 VIDEO")
                 btn3 = KeyboardButton("💀 STICKER")
                 btn4 = KeyboardButton("💅🏻 ANIME")
-                btn5 = KeyboardButton("👤 MY PROFILE")
-                btn6 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെയും BOOM ബട്ടൺ ചേർത്തു ⚠️
+                btn6 = KeyboardButton("👤 MY PROFILE")
+                btn7 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെയും BOOM ബട്ടൺ ചേർത്തു ⚠️
                 
                 reply_markup.row(btn1, btn2)
                 reply_markup.row(btn3, btn4)
-                reply_markup.row(btn5) 
+                reply_markup.row(btn7) 
                 reply_markup.row(btn6) # btn5 ഒഴിവാക്കി btn6 (പ്രൊഫൈൽ) മാത്രം കൊടുത്തു
 
                 
