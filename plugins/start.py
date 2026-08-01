@@ -122,7 +122,6 @@ def setup(bot):
             print(traceback.format_exc())
 
     @bot.message_handler(commands=['refer'])
-    @bot.message_handler(func=lambda message: message.text == "🎁 REFER")
     def refer_command(message):
         try:
             bot_info = bot.get_me()
@@ -186,7 +185,13 @@ def setup(bot):
                 f"🎯 **Goal:** {ref_text}\n\n"
                 f"💡 _Tip: Click 🎁 REFER to invite friends and get VIP instantly!_"
             )
+
+                        # പുതിയ ഇൻലൈൻ ബട്ടൺ ഉണ്ടാക്കുന്നു
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🎁 REFER & EARN VIP", callback_data="show_referral"))
             
+            # bot.reply_to ൽ reply_markup കൂടി ചേർക്കുന്നു
+            bot.reply_to(message, profile_text, parse_mode='Markdown', reply_markup=markup)
             bot.reply_to(message, profile_text, parse_mode='Markdown')
             
         except Exception as e:
@@ -224,14 +229,14 @@ def setup(bot):
                 btn2 = KeyboardButton("🔞 VIDEO")
                 btn3 = KeyboardButton("💀 STICKER")
                 btn4 = KeyboardButton("💅🏻 ANIME")
-                btn5 = KeyboardButton("🎁 REFER")
-                btn6 = KeyboardButton("👤 MY PROFILE")
-                btn7 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെയും BOOM ബട്ടൺ ചേർത്തു ⚠️
+                btn5 = KeyboardButton("👤 MY PROFILE")
+                btn6 = KeyboardButton("💥 BOOM") # ⚠️ ഇവിടെയും BOOM ബട്ടൺ ചേർത്തു ⚠️
                 
                 reply_markup.row(btn1, btn2)
                 reply_markup.row(btn3, btn4)
-                reply_markup.row(btn7) 
-                reply_markup.row(btn5, btn6)
+                reply_markup.row(btn5) 
+                reply_markup.row(btn6) # btn5 ഒഴിവാക്കി btn6 (പ്രൊഫൈൽ) മാത്രം കൊടുത്തു
+
                 
                 bot.send_message(call.message.chat.id, success_text, reply_markup=reply_markup, parse_mode='HTML')
             else:
