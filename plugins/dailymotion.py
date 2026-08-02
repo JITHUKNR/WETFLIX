@@ -63,7 +63,7 @@ def setup(bot):
             
         return None
 
-        def split_video(input_file, chat_id):
+    def split_video(input_file, chat_id):
         split_prefix = f"split_{chat_id}_{int(time.time())}"
         try:
             # 1. വീഡിയോയുടെ മൊത്തം സമയം (സെക്കൻഡിൽ) കണ്ടുപിടിക്കുന്നു
