@@ -63,15 +63,35 @@ def setup(bot):
             
         return None
 
-    def split_video(input_file, chat_id):
+        def split_video(input_file, chat_id):
         split_prefix = f"split_{chat_id}_{int(time.time())}"
         try:
-            # ⚠️ സമയം വെച്ച് മുറിക്കുന്നത് പൂർണ്ണമായും ഒഴിവാക്കി, സൈസ് വെച്ച് മാത്രം മുറിക്കുന്നു ⚠️
+            # 1. വീഡിയോയുടെ മൊത്തം സമയം (സെക്കൻഡിൽ) കണ്ടുപിടിക്കുന്നു
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries",
+                 "format=duration", "-of",
+                 "default=noprint_wrappers=1:nokey=1", input_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True
+            )
+            total_duration = float(result.stdout.strip())
+            
+            # 2. വീഡിയോയുടെ മൊത്തം സൈസ് (MB) എടുക്കുന്നു
+            file_size_mb = os.path.getsize(input_file) / (1024 * 1024)
+            
+            # 3. 48 MB വെച്ച് എത്ര പാർട്ടുകൾ വേണമെന്ന് കണക്കുകൂട്ടുന്നു
+            num_parts = int(file_size_mb / 48) + 1 
+            
+            # 4. ഒരു പാർട്ടിന് എത്ര സമയം (സെക്കൻഡ്) വേണമെന്ന് കണ്ടെത്തുന്നു
+            segment_time = int(total_duration / num_parts)
+
+            # 5. ആ കൃത്യമായ സമയം വെച്ച് വീഡിയോ മുറിക്കുന്നു
             command = [
                 'ffmpeg', '-i', input_file,
                 '-c', 'copy', '-map', '0',
                 '-f', 'segment',
-                '-fs', '48000000', # 48MB എത്തുമ്പോൾ മാത്രം മുറിക്കുന്നു
+                '-segment_time', str(segment_time),
                 '-reset_timestamps', '1',
                 f"{split_prefix}_part%03d.mp4"
             ]
