@@ -114,7 +114,7 @@ def setup(bot):
                 del user_cooldowns[user_id]
                 return
 
-     bot.edit_message_text("⏳ **Downloading in Highest Quality...**\n🔒 _Fetching secure media..._", chat_id, status_msg.message_id, parse_mode='Markdown')
+            bot.edit_message_text("⏳ **Downloading in Highest Quality...**\n🔒 _Fetching secure media..._", chat_id, status_msg.message_id, parse_mode='Markdown')
 
             ydl_opts = {
                 'format': 'best', 
